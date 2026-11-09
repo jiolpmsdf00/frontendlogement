@@ -171,7 +171,7 @@ interface Review {
 
 // ─── API Helper ─────────────────────────────────────────────────
 
-const API_URL = (import.meta as any).env?.VITE_API_URL || "http://localhost:8000";
+const API_URL = (import.meta as any).env?.VITE_API_URL || "https://backend-logement-production.up.railway.app";
 
 async function api<T = any>(
   path: string,
