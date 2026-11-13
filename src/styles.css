@@ -1450,3 +1450,367 @@ textarea.form-input {
   gap: 16px;
   margin-bottom: 24px;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   RESPONSIVE — tablette & mobile (iPhone / Android)
+   Ajouts uniquement : le rendu ordinateur (> 1100 px) est inchangé.
+   ═══════════════════════════════════════════════════════════════ */
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+button, a, .listing-card, .tab {
+  touch-action: manipulation;
+}
+
+/* ─── Écrans tactiles : pas de survol "collé" ─── */
+
+@media (hover: none) {
+  .listing-card:hover { transform: none; }
+  .listing-card:hover .listing-card-image img { transform: none; }
+  .btn-primary:hover { transform: none; box-shadow: none; }
+  .search-btn:hover { transform: none; }
+  .fav-btn:hover { transform: none; }
+  .gallery-main img:hover,
+  .gallery-thumb img:hover { transform: none; }
+}
+
+/* ─── Zones de toucher confortables ─── */
+
+@media (pointer: coarse) {
+  .fav-btn { width: 40px; height: 40px; }
+  .modal-close { width: 40px; height: 40px; }
+  .footer-col a { padding: 4px 0; }
+  .dropdown-item { padding: 14px 16px; }
+  .filter-checkbox { padding: 8px 0; }
+}
+
+/* ─── Petits ordinateurs / tablette paysage (≤ 1100px) ─── */
+
+@media (max-width: 1100px) {
+  .header-nav { display: none; }
+  .header-search-wrap { min-width: 0; flex: 1 1 auto; max-width: 420px; }
+  .search-segment input,
+  .search-segment select { min-width: 0; }
+}
+
+/* ─── Tablette (≤ 1024px) ─── */
+
+@media (max-width: 1024px) {
+  .detail-layout { gap: 32px; }
+  .booking-card { position: static; }
+}
+
+/* ─── Tablette portrait et en dessous (≤ 900px) : filtres de recherche ─── */
+
+@media (max-width: 900px) {
+  .filter-sidebar { display: none; width: 100%; padding: 16px; }
+  .filter-row > .filter-input { min-width: 0; }
+
+  /* Bouton "Filtres" (masqué en ligne dans le TSX) rendu accessible */
+  .flex-between > button.btn-outline.btn-sm[style*="display: none"] {
+    display: inline-flex !important;
+  }
+
+  /* Quand les filtres sont ouverts, on empile filtres + résultats */
+  .page-content > h1.page-title + div[style*="display: flex"]:not(.tabs) {
+    flex-direction: column;
+  }
+}
+
+/* ─── Mobile & petite tablette (≤ 768px) ─── */
+
+@media (max-width: 768px) {
+  :root { --header-height: 64px; }
+
+  body {
+    overflow-x: hidden;
+    padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .container {
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+
+  svg { flex-shrink: 0; }
+
+  /* Texte long : jamais de débordement */
+  main h1, main h2, main h3, main h4, main p {
+    overflow-wrap: anywhere;
+  }
+
+  /* Header */
+  .header { padding-top: env(safe-area-inset-top, 0px); }
+
+  .header-inner {
+    height: auto;
+    min-height: var(--header-height);
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+
+  .logo { font-size: 20px; }
+  .logo svg { width: 26px; height: 26px; }
+
+  .header-actions {
+    flex: 1 1 auto;
+    min-width: 0;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .header-actions .header-nav-btn {
+    min-width: 36px;
+    min-height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .dropdown { max-width: calc(100vw - 24px); }
+
+  /* Champs : 16px minimum pour éviter le zoom automatique sur iPhone */
+  .form-input,
+  .filter-input,
+  .date-field input,
+  .guests-field select,
+  .search-segment input,
+  .search-segment select {
+    font-size: 16px;
+  }
+
+  .admin-table select.filter-input { font-size: 16px !important; }
+
+  input[type="date"] { min-width: 0; max-width: 100%; }
+
+  /* Pages */
+  .page-content { padding: 16px 0 32px; }
+  .listing-detail { padding: 16px 0 32px; }
+  .page-title { font-size: 26px; margin: 16px 0; }
+  .flex-between { gap: 12px; }
+  .empty-state { padding: 48px 16px; }
+  .footer { margin-top: 40px; padding-top: 32px; }
+  .footer-grid { gap: 24px; }
+
+  .hero-content { padding: 0 16px; }
+
+  /* Catégories : défilement horizontal propre */
+  .category-bar {
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .category-bar::-webkit-scrollbar { display: none; }
+  .category-chip { flex-shrink: 0; }
+
+  /* Cartes d'annonces */
+  .listing-card-title > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+  .rating-badge { flex-shrink: 0; }
+
+  /* Recherche : champs empilés proprement */
+  .flex-between > .flex.flex-wrap { width: 100%; }
+  .flex-wrap > .filter-input { flex: 1 1 140px; min-width: 0; }
+  .flex-wrap > .filter-input:first-child { flex-basis: 100%; }
+  .flex-wrap > .filter-input:last-child { flex-basis: 100%; }
+
+  /* Détail d'une annonce */
+  .gallery { border-radius: var(--radius-lg); margin-bottom: 16px; }
+  .detail-info h1 { font-size: 24px; overflow-wrap: anywhere; }
+  .detail-location { flex-wrap: wrap; font-size: 15px; margin-bottom: 16px; }
+  .detail-features { gap: 12px 20px; }
+  .detail-host { flex-wrap: wrap; }
+  .host-info { min-width: 0; flex: 1 1 140px; }
+  .detail-section h3 { font-size: 18px; }
+  .avatar-circle, .host-avatar { flex-shrink: 0; }
+
+  /* Carte de réservation */
+  .booking-card { padding: 20px; border-radius: var(--radius-lg); }
+  .booking-price { font-size: 22px; }
+  .date-field { min-width: 0; }
+  .date-field input { min-width: 0; }
+  .price-line, .price-total { gap: 12px; }
+  .price-line > span:last-child,
+  .price-total > span:last-child { flex-shrink: 0; text-align: right; }
+
+  /* Onglets : défilement horizontal au lieu de déborder */
+  .tabs {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab { flex-shrink: 0; white-space: nowrap; padding: 12px 16px; }
+
+  /* Tableaux (admin, historique de paiements) : défilement interne */
+  .admin-table th,
+  .admin-table td { padding: 10px 12px; white-space: nowrap; }
+  div[style*="overflow-x: auto"] {
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+  }
+
+  /* Messagerie */
+  div[style*="max-height: 60vh"] {
+    max-height: 55vh !important;
+    max-height: 55dvh !important;
+    min-height: 240px !important;
+  }
+  div[style*="max-width: 75%"] { max-width: 85% !important; }
+  form .form-input { min-width: 0; }
+
+  /* Menu du bas */
+  .mobile-nav {
+    padding: 8px max(0px, env(safe-area-inset-right, 0px))
+             calc(8px + env(safe-area-inset-bottom, 0px))
+             max(0px, env(safe-area-inset-left, 0px));
+  }
+  .mobile-nav-item {
+    min-width: 0;
+    padding: 0 2px;
+    text-align: center;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+  }
+
+  /* Notifications "toast" au-dessus du menu du bas */
+  .toast {
+    bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+    width: max-content;
+    max-width: calc(100vw - 32px);
+    text-align: center;
+    padding: 12px 18px;
+  }
+}
+
+/* ─── Mobile (≤ 600px) ─── */
+
+@media (max-width: 600px) {
+  .listing-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+    padding: 16px 0;
+  }
+
+  .section-grid {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+  }
+
+  /* Header : sélecteur de langue compact (icône seule), "Become a host" accessible via le pied de page */
+  .header-actions > label[title] {
+    position: relative;
+    width: 36px;
+    height: 36px;
+    justify-content: center;
+  }
+  .header-actions > label[title] select {
+    position: absolute !important;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    font-size: 16px !important;
+    padding: 0 !important;
+    border: 0 !important;
+  }
+  .header-actions > .header-nav-btn:not([aria-label]) { display: none; }
+  .header-actions .btn { white-space: nowrap; }
+
+  /* Listes (réservations, annonces, notifications, conversations) */
+  .booking-item { flex-wrap: wrap; padding: 16px; gap: 12px; }
+  .booking-item-img { width: 88px; height: 88px; }
+  .booking-item-info { flex: 1 1 calc(100% - 100px); min-width: 0; }
+  .booking-item > .btn { width: 100%; }
+  .booking-item > .flex.flex-col {
+    flex-direction: row;
+    flex-wrap: wrap;
+    width: 100%;
+  }
+  .booking-item > .flex.flex-col > .btn { flex: 1 1 auto; }
+
+  /* Modales : plein écran utile, défilement interne */
+  .modal-overlay { padding: 12px; }
+  .modal {
+    max-height: calc(100vh - 24px);
+    max-height: calc(100dvh - 24px);
+    border-radius: var(--radius-lg);
+    overscroll-behavior: contain;
+  }
+  .modal-header {
+    padding: 14px 16px;
+    position: sticky;
+    top: 0;
+    background: #fff;
+    z-index: 1;
+  }
+  .modal-body { padding: 16px; }
+  .form-row { flex-wrap: wrap; }
+  .form-row > .form-group { flex: 1 1 140px; min-width: 0; }
+  .modal-body .flex.gap-8 > .form-input { min-width: 0; flex: 1 1 auto; }
+  .filter-checkbox { min-width: 0; }
+
+  /* Lignes de prix / détails */
+  .price-line > span:last-child { overflow-wrap: anywhere; }
+}
+
+/* ─── Petits téléphones (≤ 480px) ─── */
+
+@media (max-width: 480px) {
+  .btn { white-space: normal; text-align: center; max-width: 100%; }
+  .btn-lg { padding: 14px 20px; font-size: 15px; }
+
+  .page-title { font-size: 24px; }
+
+  .hero { height: 340px; }
+  .hero-content h1 { font-size: 28px; }
+  .hero-content p { font-size: 15px; margin-bottom: 24px; }
+
+  .gallery-main { height: 220px; min-height: 220px; }
+  .detail-info h1 { font-size: 22px; }
+
+  .user-avatar { padding: 4px; }
+  .user-avatar .text-sm { display: none; }
+
+  .stats-grid {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+  }
+  .host-stat-card { padding: 16px; }
+  .host-stat-card .stat-value { font-size: 24px; }
+
+  .footer-bottom { flex-direction: column; align-items: flex-start; }
+
+  /* Cartes à gros padding inline : un peu plus compactes */
+  main div[style*="padding: 24px"] { padding: 16px !important; }
+
+  /* Profil hôte */
+  .host-avatar[style*="width: 90px"] {
+    width: 64px !important;
+    height: 64px !important;
+    font-size: 24px !important;
+  }
+  main h1[style*="font-size: 28px"] { font-size: 22px !important; }
+}
+
+/* Dates empilées sur très petits écrans */
+@media (max-width: 380px) {
+  .date-inputs { grid-template-columns: 1fr; }
+  .date-field + .date-field { border-top: 1px solid var(--neutral-300); }
+  .mobile-nav-item { font-size: 10px; }
+}
+
+/* Téléphones en mode paysage */
+@media (max-height: 500px) and (orientation: landscape) and (max-width: 900px) {
+  .hero { height: 300px; }
+  .hero-content h1 { font-size: 28px; }
+  .hero-content p { margin-bottom: 16px; }
+  .modal {
+    max-height: calc(100vh - 16px);
+    max-height: calc(100dvh - 16px);
+  }
+}
