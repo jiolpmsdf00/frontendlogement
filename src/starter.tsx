@@ -479,6 +479,10 @@ const TRANSLATION_ROWS: string[][] = [
   ["Booking not found", "Réservation introuvable", "Reserva no encontrada", "Buchung nicht gefunden", "Prenotazione non trovata", "Reserva não encontrada"],
   ["View all bookings", "Voir toutes les réservations", "Ver todas las reservas", "Alle Buchungen ansehen", "Vedi tutte le prenotazioni", "Ver todas as reservas"],
   ["Back to trips", "Retour aux voyages", "Volver a viajes", "Zurück zu Reisen", "Torna ai viaggi", "Voltar às viagens"],
+  ["Verifying payment...", "Vérification du paiement...", "Verificando el pago...", "Zahlung wird überprüft...", "Verifica del pagamento...", "Verificando o pagamento..."],
+  ["Please wait a few seconds, do not pay again.", "Veuillez patienter quelques secondes, ne payez pas à nouveau.", "Espera unos segundos, no vuelvas a pagar.", "Bitte warten Sie einige Sekunden, zahlen Sie nicht erneut.", "Attendi qualche secondo, non pagare di nuovo.", "Aguarde alguns segundos, não pague novamente."],
+  ["Payment is being confirmed", "Paiement en cours de confirmation", "Pago en proceso de confirmación", "Zahlung wird bestätigt", "Pagamento in fase di conferma", "Pagamento em confirmação"],
+  ["Your payment was received by Stripe. Refresh this page in a moment; do not pay again.", "Votre paiement a été reçu par Stripe. Actualisez cette page dans un instant ; ne payez pas à nouveau.", "Stripe recibió tu pago. Actualiza la página en un momento; no vuelvas a pagar.", "Ihre Zahlung wurde von Stripe empfangen. Aktualisieren Sie die Seite gleich; zahlen Sie nicht erneut.", "Stripe ha ricevuto il pagamento. Aggiorna la pagina tra poco; non pagare di nuovo.", "O Stripe recebeu seu pagamento. Atualize a página em instantes; não pague novamente."],
   ["Payment successful!", "Paiement réussi !", "¡Pago realizado con éxito!", "Zahlung erfolgreich!", "Pagamento riuscito!", "Pagamento realizado com sucesso!"],
   ["Your booking is confirmed. A receipt has been sent to your email.", "Votre réservation est confirmée. Un reçu a été envoyé par e-mail.", "Tu reserva está confirmada. Se ha enviado un recibo a tu correo.", "Deine Buchung ist bestätigt. Eine Quittung wurde per E-Mail gesendet.", "La tua prenotazione è confermata. Una ricevuta è stata inviata via email.", "Sua reserva está confirmada. Um recibo foi enviado para seu e-mail."],
   ["Payment cancelled", "Paiement annulé", "Pago cancelado", "Zahlung abgebrochen", "Pagamento annullato", "Pagamento cancelado"],
@@ -2579,12 +2583,33 @@ function BookingDetailPage({
   const queryParams = useMemo(() => new URLSearchParams(queryStr), [queryStr]);
   const paymentStatus = queryParams.get("status");
 
+  // Retour de Stripe Checkout : on interroge le backend (statut réel) jusqu'à "paid".
+  // Le retour avec status=success ne prouve rien : seul le statut renvoyé par le backend compte.
+  const [verifying, setVerifying] = useState(paymentStatus === "success");
+
   useEffect(() => {
-    api<Booking>(`/api/bookings/${bookingId}`, {}, getToken() || undefined)
-      .then(setBooking)
-      .catch(() => setBooking(null))
-      .finally(() => setLoading(false));
-  }, [bookingId]);
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let tries = 0;
+    const MAX_TRIES = 12; // ~18 s
+    const load = () => {
+      api<Booking>(`/api/bookings/${bookingId}`, {}, getToken() || undefined)
+        .then((b) => {
+          if (cancelled) return;
+          setBooking(b);
+          if (paymentStatus === "success" && b.status === "pending" && ++tries < MAX_TRIES) {
+            setVerifying(true);
+            timer = setTimeout(load, 1500);
+          } else {
+            setVerifying(false);
+          }
+        })
+        .catch(() => { if (!cancelled) { setBooking(null); setVerifying(false); } })
+        .finally(() => { if (!cancelled) setLoading(false); });
+    };
+    load();
+    return () => { cancelled = true; if (timer) clearTimeout(timer); };
+  }, [bookingId, paymentStatus]);
 
   if (loading) return <div className="loading-spinner"><div className="spinner" /></div>;
   if (!booking) {
@@ -2614,7 +2639,7 @@ function BookingDetailPage({
         <ArrowLeft size={18} /> {t("Back to trips")}
       </button>
 
-      {paymentStatus === "success" && (
+      {paymentStatus === "success" && booking.status === "paid" && (
         <div style={{
           padding: 24, borderRadius: "var(--radius-lg)", background: "#D1FAE5",
           color: "#065F46", marginBottom: 24, display: "flex", alignItems: "center", gap: 12,
@@ -2623,6 +2648,20 @@ function BookingDetailPage({
           <div>
             <h3>{t("Payment successful!")}</h3>
             <p>{t("Your booking is confirmed. A receipt has been sent to your email.")}</p>
+          </div>
+        </div>
+      )}
+      {paymentStatus === "success" && booking.status === "pending" && (
+        <div style={{
+          padding: 24, borderRadius: "var(--radius-lg)", background: "#FEF3C7",
+          color: "#92400E", marginBottom: 24, display: "flex", alignItems: "center", gap: 12,
+        }}>
+          {verifying ? <div className="spinner" style={{ width: 24, height: 24 }} /> : <Clock size={28} />}
+          <div>
+            <h3>{verifying ? t("Verifying payment...") : t("Payment is being confirmed")}</h3>
+            <p>{verifying
+              ? t("Please wait a few seconds, do not pay again.")
+              : t("Your payment was received by Stripe. Refresh this page in a moment; do not pay again.")}</p>
           </div>
         </div>
       )}
@@ -2686,7 +2725,7 @@ function BookingDetailPage({
             <span>${booking.total.toFixed(2)}</span>
           </div>
 
-          {booking.status === "pending" && (
+          {booking.status === "pending" && paymentStatus !== "success" && (
             <button className="btn btn-primary btn-block btn-lg mt-24" onClick={payNow}>
               <CreditCard size={20} /> {t("Pay {amount}", { amount: `$${booking.total.toFixed(2)}` })}
             </button>
