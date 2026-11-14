@@ -85,6 +85,7 @@ interface User {
   avatar_url?: string;
   language?: string;
   stripe_ready?: boolean;
+  totp_enabled?: boolean;
   created_at?: string;
 }
 
@@ -120,6 +121,15 @@ interface Listing {
   property_type: string;
   status: string;
   created_at?: string;
+  check_in_time?: string;
+  check_out_time?: string;
+  pets_allowed?: boolean;
+  smoking_allowed?: boolean;
+  parties_allowed?: boolean;
+  events_allowed?: boolean;
+  children_allowed?: boolean;
+  arrival_instructions?: string | null;
+  additional_rules?: string | null;
   images: ListingImage[];
   amenities: Amenity[];
   owner?: {
@@ -154,6 +164,15 @@ interface Booking {
   stripe_payment_intent_id?: string;
   stripe_checkout_session_id?: string;
   created_at?: string;
+  has_review?: boolean;
+  review?: { id: number; rating: number; comment?: string | null } | null;
+  cancellation?: {
+    id: number;
+    status: CancellationStatus;
+    refund_percent: number;
+    refundable_amount: number;
+    refunded_amount: number | null;
+  } | null;
   listing?: {
     id: number;
     title: string;
@@ -167,6 +186,43 @@ interface Booking {
     email: string;
   };
 }
+
+type CancellationStatus = "pending" | "approved" | "rejected" | "processing" | "refunded" | "failed";
+
+interface CancellationRequest {
+  id: number;
+  booking_id: number;
+  status: CancellationStatus;
+  reason?: string | null;
+  refund_percent: number;
+  total_paid: number;
+  already_refunded: number;
+  refundable_amount: number;
+  approved_amount: number | null;
+  refunded_amount: number | null;
+  admin_note?: string | null;
+  failure_reason?: string | null;
+  created_at?: string;
+  booking?: { id: number; check_in: string; check_out: string; status: string; total: number };
+  listing?: { id: number; title: string; city: string; country: string };
+  guest?: { first_name: string; last_name: string; email: string };
+}
+
+interface CancellationPreview {
+  eligible: boolean;
+  reason: string | null;
+  refund_percent: number;
+  hours_before_arrival: number;
+  total_paid: number;
+  already_refunded: number;
+  refundable_amount: number;
+}
+
+const cancellationBadgeClass = (s: CancellationStatus) =>
+  s === "approved" ? "paid"
+  : s === "rejected" ? "cancelled"
+  : s === "processing" ? "pending"
+  : s; // pending, refunded, failed
 
 interface Review {
   id: number;
@@ -338,7 +394,7 @@ const TRANSLATION_ROWS: string[][] = [
   ["Paris", "Paris", "París", "Paris", "Parigi", "Paris"],
   ["Tokyo", "Tokyo", "Tokio", "Tokio", "Tokyo", "Tóquio"],
   ["New York", "New York", "Nueva York", "New York", "New York", "Nova York"],
-  ["© 2026 Book4Me — Find your perfect stay", "© 2026 Book4Me — Trouvez le séjour parfait", "© 2026 Book4Me — Encuentra tu estancia perfecta", "© 2026 Book4Me — Finde deinen perfekten Aufenthalt", "© 2026 Book4Me — Trova il soggiorno perfetto", "© 2026 Book4Me — Encontre a estadia perfeita"],
+  ["© 2026 GetBookForMe — Find your perfect stay", "© 2026 GetBookForMe — Trouvez le séjour parfait", "© 2026 GetBookForMe — Encuentra tu estancia perfecta", "© 2026 GetBookForMe — Finde deinen perfekten Aufenthalt", "© 2026 GetBookForMe — Trova il soggiorno perfetto", "© 2026 GetBookForMe — Encontre a estadia perfeita"],
   ["Privacy · Terms · Sitemap", "Confidentialité · Conditions · Plan du site", "Privacidad · Términos · Mapa del sitio", "Datenschutz · AGB · Sitemap", "Privacy · Termini · Mappa del sito", "Privacidade · Termos · Mapa do site"],
   ["Trips", "Voyages", "Viajes", "Reisen", "Viaggi", "Viagens"],
   ["Account", "Compte", "Cuenta", "Konto", "Account", "Conta"],
@@ -599,6 +655,193 @@ const TRANSLATION_ROWS: string[][] = [
   ["Messages", "Messages", "Mensajes", "Nachrichten", "Messaggi", "Mensagens"],
   ["Message sent", "Message envoyé", "Mensaje enviado", "Nachricht gesendet", "Messaggio inviato", "Mensagem enviada"],
   ["Failed to send message", "Échec de l'envoi du message", "Error al enviar el mensaje", "Nachricht konnte nicht gesendet werden", "Invio del messaggio fallito", "Falha ao enviar a mensagem"],
+  // ── Profil : nom, mot de passe, authentificateur ──
+  ["Edit profile", "Modifier le profil", "Editar perfil", "Profil bearbeiten", "Modifica profilo", "Editar perfil"],
+  ["Profile updated", "Profil mis à jour", "Perfil actualizado", "Profil aktualisiert", "Profilo aggiornato", "Perfil atualizado"],
+  ["Change password", "Changer le mot de passe", "Cambiar contraseña", "Passwort ändern", "Cambia password", "Alterar senha"],
+  ["Current password", "Mot de passe actuel", "Contraseña actual", "Aktuelles Passwort", "Password attuale", "Senha atual"],
+  ["New password", "Nouveau mot de passe", "Nueva contraseña", "Neues Passwort", "Nuova password", "Nova senha"],
+  ["Confirm new password", "Confirmer le nouveau mot de passe", "Confirmar nueva contraseña", "Neues Passwort bestätigen", "Conferma nuova password", "Confirmar nova senha"],
+  ["Passwords do not match", "Les mots de passe ne correspondent pas", "Las contraseñas no coinciden", "Die Passwörter stimmen nicht überein", "Le password non corrispondono", "As senhas não coincidem"],
+  ["Password updated", "Mot de passe mis à jour", "Contraseña actualizada", "Passwort aktualisiert", "Password aggiornata", "Senha atualizada"],
+  ["Current password is incorrect", "Le mot de passe actuel est incorrect", "La contraseña actual es incorrecta", "Das aktuelle Passwort ist falsch", "La password attuale non è corretta", "A senha atual está incorreta"],
+  ["Password must be at least 6 characters", "Le mot de passe doit contenir au moins 6 caractères", "La contraseña debe tener al menos 6 caracteres", "Das Passwort muss mindestens 6 Zeichen lang sein", "La password deve contenere almeno 6 caratteri", "A senha deve ter pelo menos 6 caracteres"],
+  ["First and last name are required", "Le prénom et le nom sont obligatoires", "El nombre y los apellidos son obligatorios", "Vor- und Nachname sind erforderlich", "Nome e cognome sono obbligatori", "Nome e sobrenome são obrigatórios"],
+  ["Security", "Sécurité", "Seguridad", "Sicherheit", "Sicurezza", "Segurança"],
+  ["Authenticator app (password recovery)", "Application d'authentification (récupération du mot de passe)", "Aplicación de autenticación (recuperación de contraseña)", "Authenticator-App (Passwort-Wiederherstellung)", "App di autenticazione (recupero password)", "Aplicativo autenticador (recuperação de senha)"],
+  ["Link an authenticator app such as Google Authenticator or Authy. It will let you reset your password if you forget it.", "Associez une application d'authentification comme Google Authenticator ou Authy. Elle vous permettra de réinitialiser votre mot de passe en cas d'oubli.", "Vincula una aplicación de autenticación como Google Authenticator o Authy. Te permitirá restablecer tu contraseña si la olvidas.", "Verknüpfe eine Authenticator-App wie Google Authenticator oder Authy. Damit kannst du dein Passwort zurücksetzen, falls du es vergisst.", "Collega un'app di autenticazione come Google Authenticator o Authy. Ti permetterà di reimpostare la password se la dimentichi.", "Vincule um aplicativo autenticador como o Google Authenticator ou o Authy. Ele permitirá redefinir sua senha caso você a esqueça."],
+  ["Enable authenticator", "Activer l'authentificateur", "Activar autenticador", "Authenticator aktivieren", "Attiva autenticatore", "Ativar autenticador"],
+  ["Scan this QR code with your authenticator app, then enter the 6-digit code to confirm.", "Scannez ce QR code avec votre application d'authentification, puis saisissez le code à 6 chiffres pour confirmer.", "Escanea este código QR con tu aplicación de autenticación y luego introduce el código de 6 dígitos para confirmar.", "Scanne diesen QR-Code mit deiner Authenticator-App und gib dann den 6-stelligen Code zur Bestätigung ein.", "Scansiona questo codice QR con la tua app di autenticazione, poi inserisci il codice a 6 cifre per confermare.", "Escaneie este QR code com seu aplicativo autenticador e digite o código de 6 dígitos para confirmar."],
+  ["Can't scan? Enter this key manually:", "Impossible de scanner ? Saisissez cette clé manuellement :", "¿No puedes escanear? Introduce esta clave manualmente:", "Scannen nicht möglich? Gib diesen Schlüssel manuell ein:", "Non riesci a scansionare? Inserisci questa chiave manualmente:", "Não consegue escanear? Digite esta chave manualmente:"],
+  ["6-digit code", "Code à 6 chiffres", "Código de 6 dígitos", "6-stelliger Code", "Codice a 6 cifre", "Código de 6 dígitos"],
+  ["Verify and enable", "Vérifier et activer", "Verificar y activar", "Prüfen und aktivieren", "Verifica e attiva", "Verificar e ativar"],
+  ["Authenticator enabled", "Authentificateur activé", "Autenticador activado", "Authenticator aktiviert", "Autenticatore attivato", "Autenticador ativado"],
+  ["Authenticator is active. You can use it to reset your password.", "L'authentificateur est actif. Vous pouvez l'utiliser pour réinitialiser votre mot de passe.", "El autenticador está activo. Puedes usarlo para restablecer tu contraseña.", "Der Authenticator ist aktiv. Du kannst ihn nutzen, um dein Passwort zurückzusetzen.", "L'autenticatore è attivo. Puoi usarlo per reimpostare la password.", "O autenticador está ativo. Você pode usá-lo para redefinir sua senha."],
+  ["Disable authenticator", "Désactiver l'authentificateur", "Desactivar autenticador", "Authenticator deaktivieren", "Disattiva autenticatore", "Desativar autenticador"],
+  ["Authenticator disabled", "Authentificateur désactivé", "Autenticador desactivado", "Authenticator deaktiviert", "Autenticatore disattivato", "Autenticador desativado"],
+  ["Invalid verification code", "Code de vérification invalide", "Código de verificación no válido", "Ungültiger Bestätigungscode", "Codice di verifica non valido", "Código de verificação inválido"],
+  // ── Mot de passe oublié ──
+  ["Forgot your password?", "Mot de passe oublié ?", "¿Olvidaste tu contraseña?", "Passwort vergessen?", "Password dimenticata?", "Esqueceu sua senha?"],
+  ["Reset your password", "Réinitialiser votre mot de passe", "Restablece tu contraseña", "Passwort zurücksetzen", "Reimposta la password", "Redefina sua senha"],
+  ["Enter your email, the 6-digit code shown in your authenticator app (Google Authenticator, Authy…) and your new password.", "Saisissez votre e-mail, le code à 6 chiffres affiché dans votre application d'authentification (Google Authenticator, Authy…) et votre nouveau mot de passe.", "Introduce tu correo, el código de 6 dígitos que aparece en tu aplicación de autenticación (Google Authenticator, Authy…) y tu nueva contraseña.", "Gib deine E-Mail, den 6-stelligen Code deiner Authenticator-App (Google Authenticator, Authy …) und dein neues Passwort ein.", "Inserisci la tua email, il codice a 6 cifre mostrato nell'app di autenticazione (Google Authenticator, Authy…) e la nuova password.", "Informe seu e-mail, o código de 6 dígitos exibido no aplicativo autenticador (Google Authenticator, Authy…) e sua nova senha."],
+  ["This only works if you enabled the authenticator in your profile beforehand.", "Cela ne fonctionne que si vous avez activé l'authentificateur dans votre profil au préalable.", "Solo funciona si activaste previamente el autenticador en tu perfil.", "Das funktioniert nur, wenn du den Authenticator zuvor in deinem Profil aktiviert hast.", "Funziona solo se hai già attivato l'autenticatore nel tuo profilo.", "Só funciona se você tiver ativado o autenticador no seu perfil anteriormente."],
+  ["Verification code", "Code de vérification", "Código de verificación", "Bestätigungscode", "Codice di verifica", "Código de verificação"],
+  ["Reset password", "Réinitialiser le mot de passe", "Restablecer contraseña", "Passwort zurücksetzen", "Reimposta password", "Redefinir senha"],
+  ["Password reset successfully. You can now log in.", "Mot de passe réinitialisé. Vous pouvez maintenant vous connecter.", "Contraseña restablecida. Ya puedes iniciar sesión.", "Passwort zurückgesetzt. Du kannst dich jetzt anmelden.", "Password reimpostata. Ora puoi accedere.", "Senha redefinida. Agora você pode entrar."],
+  ["Back to login", "Retour à la connexion", "Volver a iniciar sesión", "Zurück zur Anmeldung", "Torna all'accesso", "Voltar ao login"],
+  ["Invalid email or verification code", "E-mail ou code de vérification invalide", "Correo o código de verificación no válidos", "Ungültige E-Mail oder ungültiger Bestätigungscode", "Email o codice di verifica non validi", "E-mail ou código de verificação inválidos"],
+  ["Too many attempts. Please try again later.", "Trop de tentatives. Veuillez réessayer plus tard.", "Demasiados intentos. Inténtalo de nuevo más tarde.", "Zu viele Versuche. Bitte versuche es später erneut.", "Troppi tentativi. Riprova più tardi.", "Muitas tentativas. Tente novamente mais tarde."],
+  // ── Avis clients ──
+  ["Leave a review", "Laisser un avis", "Dejar una reseña", "Bewertung abgeben", "Lascia una recensione", "Deixar uma avaliação"],
+  ["How was your stay?", "Comment s'est passé votre séjour ?", "¿Qué tal tu estancia?", "Wie war dein Aufenthalt?", "Com'è andato il tuo soggiorno?", "Como foi sua estadia?"],
+  ["Your rating", "Votre note", "Tu puntuación", "Deine Bewertung", "Il tuo voto", "Sua nota"],
+  ["Your comment (optional)", "Votre commentaire (facultatif)", "Tu comentario (opcional)", "Dein Kommentar (optional)", "Il tuo commento (facoltativo)", "Seu comentário (opcional)"],
+  ["Share your experience...", "Partagez votre expérience...", "Comparte tu experiencia...", "Teile deine Erfahrung...", "Condividi la tua esperienza...", "Compartilhe sua experiência..."],
+  ["Submit review", "Publier l'avis", "Publicar reseña", "Bewertung veröffentlichen", "Pubblica recensione", "Publicar avaliação"],
+  ["Thank you for your review!", "Merci pour votre avis !", "¡Gracias por tu reseña!", "Danke für deine Bewertung!", "Grazie per la tua recensione!", "Obrigado pela sua avaliação!"],
+  ["Your review", "Votre avis", "Tu reseña", "Deine Bewertung", "La tua recensione", "Sua avaliação"],
+  ["Please select a rating", "Veuillez choisir une note", "Selecciona una puntuación", "Bitte wähle eine Bewertung", "Seleziona un voto", "Selecione uma nota"],
+  ["You can only review after your stay has ended", "Vous ne pouvez laisser un avis qu'après la fin de votre séjour", "Solo puedes dejar una reseña cuando termine tu estancia", "Du kannst erst nach Ende deines Aufenthalts bewerten", "Puoi lasciare una recensione solo dopo la fine del soggiorno", "Você só pode avaliar após o fim da estadia"],
+  ["You have already reviewed this booking", "Vous avez déjà laissé un avis pour cette réservation", "Ya has dejado una reseña para esta reserva", "Du hast diese Buchung bereits bewertet", "Hai già recensito questa prenotazione", "Você já avaliou esta reserva"],
+  // ── Calendrier de l'hôte ──
+  ["Calendar", "Calendrier", "Calendario", "Kalender", "Calendario", "Calendário"],
+  ["Availability calendar", "Calendrier de disponibilités", "Calendario de disponibilidad", "Verfügbarkeitskalender", "Calendario disponibilità", "Calendário de disponibilidade"],
+  ["Select the dates to block or unblock, then confirm.", "Sélectionnez les dates à bloquer ou débloquer, puis confirmez.", "Selecciona las fechas a bloquear o desbloquear y confirma.", "Wähle die Daten zum Sperren oder Freigeben und bestätige.", "Seleziona le date da bloccare o sbloccare, poi conferma.", "Selecione as datas para bloquear ou desbloquear e confirme."],
+  ["Block selected dates ({n})", "Bloquer les dates sélectionnées ({n})", "Bloquear fechas seleccionadas ({n})", "Ausgewählte Daten sperren ({n})", "Blocca le date selezionate ({n})", "Bloquear datas selecionadas ({n})"],
+  ["Unblock selected dates ({n})", "Débloquer les dates sélectionnées ({n})", "Desbloquear fechas seleccionadas ({n})", "Ausgewählte Daten freigeben ({n})", "Sblocca le date selezionate ({n})", "Desbloquear datas selecionadas ({n})"],
+  ["Available", "Disponible", "Disponible", "Verfügbar", "Disponibile", "Disponível"],
+  ["Blocked", "Bloqué", "Bloqueado", "Gesperrt", "Bloccato", "Bloqueado"],
+  ["Booked", "Réservé", "Reservado", "Gebucht", "Prenotato", "Reservado"],
+  ["Dates blocked", "Dates bloquées", "Fechas bloqueadas", "Daten gesperrt", "Date bloccate", "Datas bloqueadas"],
+  ["Dates unblocked", "Dates débloquées", "Fechas desbloqueadas", "Daten freigegeben", "Date sbloccate", "Datas desbloqueadas"],
+  ["Previous month", "Mois précédent", "Mes anterior", "Vorheriger Monat", "Mese precedente", "Mês anterior"],
+  ["Next month", "Mois suivant", "Mes siguiente", "Nächster Monat", "Mese successivo", "Próximo mês"],
+  ["Some of these dates are already booked", "Certaines de ces dates sont déjà réservées", "Algunas de estas fechas ya están reservadas", "Einige dieser Daten sind bereits gebucht", "Alcune di queste date sono già prenotate", "Algumas dessas datas já estão reservadas"],
+  ["Past dates cannot be blocked", "Les dates passées ne peuvent pas être bloquées", "Las fechas pasadas no se pueden bloquear", "Vergangene Daten können nicht gesperrt werden", "Le date passate non possono essere bloccate", "Datas passadas não podem ser bloqueadas"],
+  // ── Annulation & remboursement ──
+  ["Cancel my booking", "Annuler ma réservation", "Cancelar mi reserva", "Meine Buchung stornieren", "Annulla la mia prenotazione", "Cancelar minha reserva"],
+  ["Cancellation request", "Demande d'annulation", "Solicitud de cancelación", "Stornierungsanfrage", "Richiesta di annullamento", "Pedido de cancelamento"],
+  ["Cancellations", "Annulations", "Cancelaciones", "Stornierungen", "Annullamenti", "Cancelamentos"],
+  ["Refund policy", "Politique de remboursement", "Política de reembolso", "Erstattungsrichtlinie", "Politica di rimborso", "Política de reembolso"],
+  ["More than 7 days before arrival: 100% refund", "Plus de 7 jours avant l'arrivée : remboursement de 100 %", "Más de 7 días antes de la llegada: reembolso del 100 %", "Mehr als 7 Tage vor Anreise: 100 % Erstattung", "Più di 7 giorni prima dell'arrivo: rimborso del 100%", "Mais de 7 dias antes da chegada: reembolso de 100%"],
+  ["Between 24 hours and 7 days: 50% refund", "Entre 24 heures et 7 jours : remboursement de 50 %", "Entre 24 horas y 7 días: reembolso del 50 %", "Zwischen 24 Stunden und 7 Tagen: 50 % Erstattung", "Tra 24 ore e 7 giorni: rimborso del 50%", "Entre 24 horas e 7 dias: reembolso de 50%"],
+  ["Less than 24 hours: no automatic refund", "Moins de 24 heures : aucun remboursement automatique", "Menos de 24 horas: sin reembolso automático", "Weniger als 24 Stunden: keine automatische Erstattung", "Meno di 24 ore: nessun rimborso automatico", "Menos de 24 horas: sem reembolso automático"],
+  ["Refund rate", "Taux de remboursement", "Porcentaje de reembolso", "Erstattungsquote", "Percentuale di rimborso", "Percentual de reembolso"],
+  ["Estimated refund", "Remboursement estimé", "Reembolso estimado", "Voraussichtliche Erstattung", "Rimborso stimato", "Reembolso estimado"],
+  ["Refund", "Remboursement", "Reembolso", "Erstattung", "Rimborso", "Reembolso"],
+  ["Reason (optional)", "Motif (facultatif)", "Motivo (opcional)", "Grund (optional)", "Motivo (facoltativo)", "Motivo (opcional)"],
+  ["Your request will be reviewed by our team. You will be notified at each step.", "Votre demande sera examinée par notre équipe. Vous serez notifié à chaque étape.", "Nuestro equipo revisará tu solicitud. Se te notificará en cada paso.", "Unser Team prüft deine Anfrage. Du wirst bei jedem Schritt benachrichtigt.", "Il nostro team esaminerà la tua richiesta. Riceverai una notifica a ogni passaggio.", "Nossa equipe analisará seu pedido. Você será notificado a cada etapa."],
+  ["Send cancellation request", "Envoyer la demande d'annulation", "Enviar solicitud de cancelación", "Stornierungsanfrage senden", "Invia richiesta di annullamento", "Enviar pedido de cancelamento"],
+  ["Cancellation request sent", "Demande d'annulation envoyée", "Solicitud de cancelación enviada", "Stornierungsanfrage gesendet", "Richiesta di annullamento inviata", "Pedido de cancelamento enviado"],
+  ["No cancellation requests", "Aucune demande d'annulation", "Sin solicitudes de cancelación", "Keine Stornierungsanfragen", "Nessuna richiesta di annullamento", "Nenhum pedido de cancelamento"],
+  ["Cancellation requests ({n})", "Demandes d'annulation ({n})", "Solicitudes de cancelación ({n})", "Stornierungsanfragen ({n})", "Richieste di annullamento ({n})", "Pedidos de cancelamento ({n})"],
+  ["All statuses", "Tous les statuts", "Todos los estados", "Alle Status", "Tutti gli stati", "Todos os status"],
+  ["Approve", "Accepter", "Aprobar", "Genehmigen", "Approva", "Aprovar"],
+  ["Reject", "Refuser", "Rechazar", "Ablehnen", "Rifiuta", "Recusar"],
+  ["Sync with Stripe", "Synchroniser avec Stripe", "Sincronizar con Stripe", "Mit Stripe synchronisieren", "Sincronizza con Stripe", "Sincronizar com o Stripe"],
+  ["Actions", "Actions", "Acciones", "Aktionen", "Azioni", "Ações"],
+  ["Note for the customer (optional)", "Note pour le client (facultatif)", "Nota para el cliente (opcional)", "Notiz für den Kunden (optional)", "Nota per il cliente (facoltativa)", "Nota para o cliente (opcional)"],
+  ["Request processed", "Demande traitée", "Solicitud procesada", "Anfrage bearbeitet", "Richiesta elaborata", "Pedido processado"],
+  ["Refunded: {amount}", "Remboursé : {amount}", "Reembolsado: {amount}", "Erstattet: {amount}", "Rimborsato: {amount}", "Reembolsado: {amount}"],
+  ["Already refunded: {amount}", "Déjà remboursé : {amount}", "Ya reembolsado: {amount}", "Bereits erstattet: {amount}", "Già rimborsato: {amount}", "Já reembolsado: {amount}"],
+  ["Note: {note}", "Note : {note}", "Nota: {note}", "Notiz: {note}", "Nota: {note}", "Nota: {note}"],
+  ["approved", "approuvée", "aprobada", "genehmigt", "approvata", "aprovada"],
+  ["rejected", "refusée", "rechazada", "abgelehnt", "rifiutata", "recusada"],
+  ["processing", "en cours", "en curso", "in Bearbeitung", "in corso", "em andamento"],
+  // ── Règles du logement ──
+  ["House rules", "Règles du logement", "Normas del alojamiento", "Hausregeln", "Regole della casa", "Regras da casa"],
+  ["Check-in time", "Heure d'arrivée", "Hora de llegada", "Check-in-Zeit", "Orario di check-in", "Horário de check-in"],
+  ["Check-out time", "Heure de départ", "Hora de salida", "Check-out-Zeit", "Orario di check-out", "Horário de check-out"],
+  ["Check-in from {time}", "Arrivée à partir de {time}", "Llegada a partir de las {time}", "Check-in ab {time}", "Check-in dalle {time}", "Check-in a partir de {time}"],
+  ["Check-out before {time}", "Départ avant {time}", "Salida antes de las {time}", "Check-out bis {time}", "Check-out entro le {time}", "Check-out até {time}"],
+  ["Pets allowed", "Animaux acceptés", "Se admiten mascotas", "Haustiere erlaubt", "Animali ammessi", "Animais permitidos"],
+  ["No pets", "Animaux interdits", "No se admiten mascotas", "Keine Haustiere", "Animali non ammessi", "Animais não permitidos"],
+  ["Smoking allowed", "Tabac autorisé", "Se permite fumar", "Rauchen erlaubt", "Fumo consentito", "Fumar permitido"],
+  ["No smoking", "Tabac interdit", "Prohibido fumar", "Rauchen verboten", "Vietato fumare", "Proibido fumar"],
+  ["Parties allowed", "Fêtes autorisées", "Se permiten fiestas", "Partys erlaubt", "Feste consentite", "Festas permitidas"],
+  ["No parties", "Fêtes interdites", "Prohibidas las fiestas", "Keine Partys", "Feste vietate", "Festas proibidas"],
+  ["Events allowed", "Événements autorisés", "Se permiten eventos", "Veranstaltungen erlaubt", "Eventi consentiti", "Eventos permitidos"],
+  ["No events", "Événements interdits", "Prohibidos los eventos", "Keine Veranstaltungen", "Eventi vietati", "Eventos proibidos"],
+  ["Children welcome", "Enfants acceptés", "Se admiten niños", "Kinder willkommen", "Bambini ammessi", "Crianças bem-vindas"],
+  ["Children not allowed", "Enfants non acceptés", "No se admiten niños", "Keine Kinder", "Bambini non ammessi", "Crianças não permitidas"],
+  ["Arrival instructions", "Instructions d'arrivée", "Instrucciones de llegada", "Anreiseinformationen", "Istruzioni per l'arrivo", "Instruções de chegada"],
+  ["Additional rules", "Règles supplémentaires", "Normas adicionales", "Zusätzliche Regeln", "Regole aggiuntive", "Regras adicionais"],
+  // ── Page « Qu'est-ce que GetBookForMe ? » ──
+  ["What is GetBookForMe?", "Qu'est-ce que GetBookForMe ?", "¿Qué es GetBookForMe?", "Was ist GetBookForMe?", "Che cos'è GetBookForMe?", "O que é o GetBookForMe?"],
+  ["About GetBookForMe", "À propos de GetBookForMe", "Sobre GetBookForMe", "Über GetBookForMe", "Su GetBookForMe", "Sobre o GetBookForMe"],
+  ["GetBookForMe is a marketplace that connects travelers with hosts offering apartments, houses, villas, cabins and more, for a simple, transparent and secure booking experience.", "GetBookForMe est une place de marché qui met en relation des voyageurs et des hôtes proposant appartements, maisons, villas, cabanes et bien plus, pour une réservation simple, transparente et sécurisée.", "GetBookForMe es un marketplace que conecta a viajeros con anfitriones que ofrecen apartamentos, casas, villas, cabañas y mucho más, para una reserva sencilla, transparente y segura.", "GetBookForMe ist ein Marktplatz, der Reisende mit Gastgebern von Apartments, Häusern, Villen, Hütten und mehr verbindet – für eine einfache, transparente und sichere Buchung.", "GetBookForMe è un marketplace che mette in contatto viaggiatori e host che offrono appartamenti, case, ville, baite e altro, per una prenotazione semplice, trasparente e sicura.", "O GetBookForMe é um marketplace que conecta viajantes a anfitriões que oferecem apartamentos, casas, vilas, cabanas e muito mais, para uma reserva simples, transparente e segura."],
+  ["Our mission", "Notre mission", "Nuestra misión", "Unsere Mission", "La nostra missione", "Nossa missão"],
+  ["We want booking a stay to be as easy as it is reassuring. Travelers find the right place with clear prices, honest reviews and a fair cancellation policy. Hosts get professional tools to share their space and be paid securely.", "Nous voulons que réserver un séjour soit aussi simple que rassurant. Les voyageurs trouvent le bon logement grâce à des prix clairs, des avis honnêtes et une politique d'annulation équitable. Les hôtes disposent d'outils professionnels pour partager leur espace et être payés en toute sécurité.", "Queremos que reservar una estancia sea tan fácil como tranquilizador. Los viajeros encuentran el lugar adecuado con precios claros, reseñas honestas y una política de cancelación justa. Los anfitriones disponen de herramientas profesionales para compartir su espacio y cobrar con seguridad.", "Wir möchten, dass das Buchen eines Aufenthalts so einfach wie beruhigend ist. Reisende finden die passende Unterkunft mit klaren Preisen, ehrlichen Bewertungen und fairen Stornierungsbedingungen. Gastgeber erhalten professionelle Werkzeuge, um ihren Wohnraum zu teilen und sicher bezahlt zu werden.", "Vogliamo che prenotare un soggiorno sia semplice e rassicurante. I viaggiatori trovano l'alloggio giusto con prezzi chiari, recensioni oneste e una politica di cancellazione equa. Gli host dispongono di strumenti professionali per condividere il proprio spazio e ricevere pagamenti in sicurezza.", "Queremos que reservar uma estadia seja tão fácil quanto tranquilizador. Os viajantes encontram o lugar certo com preços claros, avaliações honestas e uma política de cancelamento justa. Os anfitriões têm ferramentas profissionais para compartilhar seu espaço e receber com segurança."],
+  ["How it works", "Comment ça marche", "Cómo funciona", "So funktioniert es", "Come funziona", "Como funciona"],
+  ["For travelers", "Pour les voyageurs", "Para viajeros", "Für Reisende", "Per i viaggiatori", "Para viajantes"],
+  ["For hosts", "Pour les hôtes", "Para anfitriones", "Für Gastgeber", "Per gli host", "Para anfitriões"],
+  ["Find your place", "Trouvez votre logement", "Encuentra tu alojamiento", "Finde deine Unterkunft", "Trova il tuo alloggio", "Encontre seu lugar"],
+  ["Search by destination, dates and number of guests, then refine with price, rooms and amenities.", "Recherchez par destination, dates et nombre de voyageurs, puis affinez par prix, pièces et équipements.", "Busca por destino, fechas y número de huéspedes y afina por precio, habitaciones y servicios.", "Suche nach Reiseziel, Datum und Gästezahl und verfeinere nach Preis, Zimmern und Ausstattung.", "Cerca per destinazione, date e numero di ospiti, poi affina per prezzo, stanze e servizi.", "Pesquise por destino, datas e número de hóspedes e refine por preço, cômodos e comodidades."],
+  ["Compare with confidence", "Comparez en confiance", "Compara con confianza", "Vergleiche mit Vertrauen", "Confronta con fiducia", "Compare com confiança"],
+  ["Browse photos, amenities, house rules and reviews from real guests.", "Consultez les photos, les équipements, les règles du logement et les avis de vrais voyageurs.", "Consulta fotos, servicios, normas del alojamiento y reseñas de huéspedes reales.", "Sieh dir Fotos, Ausstattung, Hausregeln und Bewertungen echter Gäste an.", "Consulta foto, servizi, regole della casa e recensioni di ospiti reali.", "Veja fotos, comodidades, regras da casa e avaliações de hóspedes reais."],
+  ["Book and pay securely", "Réservez et payez en sécurité", "Reserva y paga con seguridad", "Sicher buchen und bezahlen", "Prenota e paga in sicurezza", "Reserve e pague com segurança"],
+  ["Pay by card through Stripe Checkout. Your booking is confirmed once the payment is verified.", "Votre réservation est confirmée dès que le paiement est vérifié.", "Paga con tarjeta mediante Stripe Checkout. Tu reserva se confirma cuando se verifica el pago.", "Bezahle per Karte über Stripe Checkout. Deine Buchung ist bestätigt, sobald die Zahlung geprüft wurde.", "Paga con carta tramite Stripe Checkout. La prenotazione è confermata dopo la verifica del pagamento.", "Pague com cartão pelo Stripe Checkout. Sua reserva é confirmada assim que o pagamento é verificado."],
+  ["Stay and share", "Séjournez et partagez", "Disfruta y comparte", "Genieße und teile", "Soggiorna e condividi", "Hospede-se e compartilhe"],
+  ["Message your host, enjoy your stay, then leave a review to help the community.", "Échangez avec votre hôte, profitez de votre séjour, puis laissez un avis pour aider la communauté.", "Escribe a tu anfitrión, disfruta de tu estancia y deja una reseña para ayudar a la comunidad.", "Schreibe deinem Gastgeber, genieße deinen Aufenthalt und hinterlasse eine Bewertung für die Community.", "Scrivi al tuo host, goditi il soggiorno e lascia una recensione per aiutare la community.", "Converse com seu anfitrião, aproveite a estadia e deixe uma avaliação para ajudar a comunidade."],
+  ["Create your host account", "Créez votre compte hôte", "Crea tu cuenta de anfitrión", "Erstelle dein Gastgeberkonto", "Crea il tuo account host", "Crie sua conta de anfitrião"],
+  ["Become a host in one click and access your host dashboard.", "Devenez hôte en un clic et accédez à votre espace hôte.", "Hazte anfitrión con un clic y accede a tu panel de anfitrión.", "Werde mit einem Klick Gastgeber und öffne dein Gastgeber-Dashboard.", "Diventa host con un clic e accedi al tuo dashboard host.", "Torne-se anfitrião com um clique e acesse seu painel do anfitrião."],
+  ["Connect Stripe", "Connectez Stripe", "Conecta Stripe", "Stripe verbinden", "Collega Stripe", "Conecte o Stripe"],
+  ["Complete your Stripe Connect setup to publish listings and receive payouts.", "Terminez la configuration de Stripe Connect pour publier des annonces et recevoir vos versements.", "Completa la configuración de Stripe Connect para publicar anuncios y recibir pagos.", "Schließe die Stripe-Connect-Einrichtung ab, um Anzeigen zu veröffentlichen und Auszahlungen zu erhalten.", "Completa la configurazione di Stripe Connect per pubblicare annunci e ricevere i pagamenti.", "Conclua a configuração do Stripe Connect para publicar anúncios e receber repasses."],
+  ["Publish your listing", "Publiez votre annonce", "Publica tu anuncio", "Veröffentliche deine Anzeige", "Pubblica il tuo annuncio", "Publique seu anúncio"],
+  ["Add photos, price, amenities and house rules, then publish when you are ready.", "Ajoutez photos, prix, équipements et règles du logement, puis publiez quand vous êtes prêt.", "Añade fotos, precio, servicios y normas del alojamiento y publica cuando estés listo.", "Füge Fotos, Preis, Ausstattung und Hausregeln hinzu und veröffentliche, wenn du bereit bist.", "Aggiungi foto, prezzo, servizi e regole della casa, poi pubblica quando sei pronto.", "Adicione fotos, preço, comodidades e regras da casa e publique quando estiver pronto."],
+  ["Manage and get paid", "Gérez et soyez payé", "Gestiona y cobra", "Verwalte und werde bezahlt", "Gestisci e vieni pagato", "Gerencie e receba"],
+  ["Follow reservations, block dates in your calendar, chat with guests and track your payouts.", "Suivez les réservations, bloquez des dates dans votre calendrier, échangez avec les voyageurs et suivez vos versements.", "Sigue las reservas, bloquea fechas en tu calendario, chatea con los huéspedes y controla tus pagos.", "Verfolge Buchungen, sperre Daten im Kalender, chatte mit Gästen und behalte deine Auszahlungen im Blick.", "Segui le prenotazioni, blocca le date nel calendario, chatta con gli ospiti e controlla i tuoi pagamenti.", "Acompanhe reservas, bloqueie datas no calendário, converse com hóspedes e controle seus repasses."],
+  ["Why choose GetBookForMe", "Pourquoi choisir GetBookForMe", "Por qué elegir GetBookForMe", "Warum GetBookForMe", "Perché scegliere GetBookForMe", "Por que escolher o GetBookForMe"],
+  ["Honest reviews", "Des avis honnêtes", "Reseñas honestas", "Ehrliche Bewertungen", "Recensioni oneste", "Avaliações honestas"],
+  ["Only guests with a paid booking can review, and only after their stay has ended.", "Seuls les voyageurs ayant une réservation payée peuvent laisser un avis, et uniquement après la fin de leur séjour.", "Solo los huéspedes con una reserva pagada pueden dejar una reseña, y únicamente cuando termina su estancia.", "Nur Gäste mit bezahlter Buchung können bewerten, und zwar erst nach Ende ihres Aufenthalts.", "Solo gli ospiti con una prenotazione pagata possono recensire, e solo dopo la fine del soggiorno.", "Somente hóspedes com reserva paga podem avaliar, e apenas depois do fim da estadia."],
+  ["Secure payments", "Paiements sécurisés", "Pagos seguros", "Sichere Zahlungen", "Pagamenti sicuri", "Pagamentos seguros"],
+  ["Payments are processed by Stripe. GetBookForMe never sees or stores your card details.", "Les paiements sont traités par Stripe. GetBookForMe ne conserve jamais vos données de carte.", "Los pagos los procesa Stripe. GetBookForMe nunca ve ni almacena los datos de tu tarjeta.", "Zahlungen werden von Stripe abgewickelt. GetBookForMe sieht oder speichert deine Kartendaten nie.", "I pagamenti sono elaborati da Stripe. GetBookForMe non vede né conserva mai i dati della tua carta.", "Os pagamentos são processados pelo Stripe. O GetBookForMe nunca vê nem armazena os dados do seu cartão."],
+  ["Fair cancellation policy", "Politique d'annulation équitable", "Política de cancelación justa", "Faire Stornierungsbedingungen", "Politica di cancellazione equa", "Política de cancelamento justa"],
+  ["A clear policy applies to every listing: 100% refund more than 7 days before arrival and 50% between 24 hours and 7 days.", "Une politique claire s'applique à chaque logement remboursement de 100 % plus de 7 jours avant l'arrivée et de 50 % entre 24 heures et 7 jours.", "Una política clara se aplica a cada alojamiento: reembolso del 100 % con más de 7 días de antelación y del 50 % entre 24 horas y 7 días.", "Für jede Unterkunft gilt eine klare Regel: 100 % Erstattung mehr als 7 Tage vor Anreise und 50 % zwischen 24 Stunden und 7 Tagen.", "A ogni alloggio si applica una politica chiara: rimborso del 100% oltre 7 giorni prima dell'arrivo e del 50% tra 24 ore e 7 giorni.", "Uma política clara vale para cada anúncio: reembolso de 100% com mais de 7 dias de antecedência e de 50% entre 24 horas e 7 dias."],
+  ["Direct messaging", "Messagerie directe", "Mensajería directa", "Direkte Nachrichten", "Messaggi diretti", "Mensagens diretas"],
+  ["Once a booking is confirmed, you can chat directly with your host or guest, with instant notifications.", "Une fois la réservation confirmée, échangez directement avec votre hôte ou votre voyageur, avec des notifications instantanées.", "Una vez confirmada la reserva, puedes chatear directamente con tu anfitrión o huésped, con notificaciones instantáneas.", "Sobald die Buchung bestätigt ist, kannst du direkt mit Gastgeber oder Gast chatten – mit sofortigen Benachrichtigungen.", "Una volta confermata la prenotazione, puoi chattare direttamente con host o ospite, con notifiche istantanee.", "Com a reserva confirmada, você conversa diretamente com anfitrião ou hóspede, com notificações instantâneas."],
+  ["Six languages", "Six langues", "Seis idiomas", "Sechs Sprachen", "Sei lingue", "Seis idiomas"],
+  ["Use the platform in English, French, Spanish, German, Italian or Portuguese.", "Utilisez la plateforme en anglais, français, espagnol, allemand, italien ou portugais.", "Usa la plataforma en inglés, francés, español, alemán, italiano o portugués.", "Nutze die Plattform auf Englisch, Französisch, Spanisch, Deutsch, Italienisch oder Portugiesisch.", "Usa la piattaforma in inglese, francese, spagnolo, tedesco, italiano o portoghese.", "Use a plataforma em inglês, francês, espanhol, alemão, italiano ou português."],
+  ["Powerful host tools", "Des outils d'hôte complets", "Herramientas completas para anfitriones", "Leistungsstarke Gastgeber-Tools", "Strumenti completi per gli host", "Ferramentas completas para anfitriões"],
+  ["Availability calendar, payment history, house rules and a public host profile.", "Calendrier de disponibilités, historique des paiements, règles du logement et profil public d'hôte.", "Calendario de disponibilidad, historial de pagos, normas del alojamiento y perfil público de anfitrión.", "Verfügbarkeitskalender, Zahlungsverlauf, Hausregeln und ein öffentliches Gastgeberprofil.", "Calendario di disponibilità, cronologia dei pagamenti, regole della casa e profilo host pubblico.", "Calendário de disponibilidade, histórico de pagamentos, regras da casa e perfil público do anfitrião."],
+  ["Ready to get started?", "Prêt à commencer ?", "¿Listo para empezar?", "Bereit loszulegen?", "Pronto a iniziare?", "Pronto para começar?"],
+  ["Find your next stay or start hosting today.", "Trouvez votre prochain séjour ou commencez à accueillir dès aujourd'hui.", "Encuentra tu próxima estancia o empieza a alojar hoy mismo.", "Finde deinen nächsten Aufenthalt oder werde noch heute Gastgeber.", "Trova il tuo prossimo soggiorno o inizia a ospitare oggi stesso.", "Encontre sua próxima estadia ou comece a hospedar hoje mesmo."],
+  // ── Page « Sécurité et confidentialité » ──
+  ["Security & privacy", "Sécurité et confidentialité", "Seguridad y privacidad", "Sicherheit und Datenschutz", "Sicurezza e privacy", "Segurança e privacidade"],
+  ["Here is how GetBookForMe protects your account, your personal data and your payments.", "Voici comment GetBookForMe protège votre compte, vos données personnelles et vos paiements.", "Así protege GetBookForMe tu cuenta, tus datos personales y tus pagos.", "So schützt GetBookForMe dein Konto, deine persönlichen Daten und deine Zahlungen.", "Ecco come GetBookForMe protegge il tuo account, i tuoi dati personali e i tuoi pagamenti.", "Veja como o GetBookForMe protege sua conta, seus dados pessoais e seus pagamentos."],
+  ["Account protection", "Protection du compte", "Protección de la cuenta", "Kontoschutz", "Protezione dell'account", "Proteção da conta"],
+  ["Secure passwords", "Mots de passe sécurisés", "Contraseñas seguras", "Sichere Passwörter", "Password sicure", "Senhas seguras"],
+  ["Passwords are never stored in clear text: they are hashed with a strong one-way algorithm before being saved.", "Les mots de passe ne sont jamais stockés ils sont hachés avec un algorithme à sens unique robuste avant d'être enregistrés.", "Las contraseñas nunca se guardan en texto claro: se procesan con un algoritmo unidireccional robusto antes de almacenarse.", "Passwörter werden nie im Klartext gespeichert: Sie werden vor dem Speichern mit einem starken Einwegverfahren gehasht.", "Le password non vengono mai salvate in chiaro: sono cifrate con un robusto algoritmo a senso unico prima di essere memorizzate.", "As senhas nunca são guardadas em texto simples: passam por um algoritmo robusto de via única antes de serem salvas."],
+  ["Protected sessions", "Sessions protégées", "Sesiones protegidas", "Geschützte Sitzungen", "Sessioni protette", "Sessões protegidas"],
+  ["Each session uses a signed token that expires automatically, and private pages require you to be logged in.", "Chaque session utilise un jeton signé qui expire automatiquement, et les pages privées exigent d'être connecté.", "Cada sesión usa un token firmado que caduca automáticamente, y las páginas privadas requieren haber iniciado sesión.", "Jede Sitzung nutzt ein signiertes Token, das automatisch abläuft, und private Seiten erfordern eine Anmeldung.", "Ogni sessione usa un token firmato che scade automaticamente e le pagine private richiedono l'accesso.", "Cada sessão usa um token assinado que expira automaticamente, e as páginas privadas exigem login."],
+  ["Authenticator app", "Application d'authentification", "Aplicación de autenticación", "Authenticator-App", "App di autenticazione", "Aplicativo autenticador"],
+  ["Enable an authenticator app such as Google Authenticator or Authy to reset your password safely. Each code works only once.", "Activez une application d'authentification comme Google Authenticator ou Authy pour réinitialiser votre mot de passe en toute sécurité.", "Activa una aplicación de autenticación como Google Authenticator o Authy para restablecer tu contraseña con seguridad. Cada código funciona solo una vez.", "Aktiviere eine Authenticator-App wie Google Authenticator oder Authy, um dein Passwort sicher zurückzusetzen. Jeder Code funktioniert nur einmal.", "Attiva un'app di autenticazione come Google Authenticator o Authy per reimpostare la password in sicurezza. Ogni codice funziona una sola volta.", "Ative um aplicativo autenticador como o Google Authenticator ou o Authy para redefinir sua senha com segurança. Cada código funciona só uma vez."],
+  ["Brute-force protection", "Protection contre les attaques", "Protección contra ataques", "Schutz vor Angriffen", "Protezione dagli attacchi", "Proteção contra ataques"],
+  ["Password reset attempts are limited, and error messages never reveal whether an email address has an account.", "Les tentatives de réinitialisation du mot de passe sont limitées, et les messages d'erreur ne révèlent jamais si une adresse e-mail possède un compte.", "Los intentos de restablecer la contraseña están limitados y los mensajes de error nunca revelan si un correo tiene cuenta.", "Versuche zum Zurücksetzen des Passworts sind begrenzt, und Fehlermeldungen verraten nie, ob eine E-Mail-Adresse ein Konto hat.", "I tentativi di reimpostazione della password sono limitati e i messaggi di errore non rivelano mai se un indirizzo email ha un account.", "As tentativas de redefinição de senha são limitadas e as mensagens de erro nunca revelam se um e-mail possui conta."],
+  ["Personal data", "Données personnelles", "Datos personales", "Persönliche Daten", "Dati personali", "Dados pessoais"],
+  ["Private by default", "Privées par défaut", "Privados por defecto", "Standardmäßig privat", "Privati per impostazione predefinita", "Privados por padrão"],
+  ["Your email address and phone number are never shown on public pages, including host profiles.", "Votre adresse e-mail et votre numéro de téléphone ne sont jamais affichés sur les pages publiques, profils d'hôtes compris.", "Tu correo y tu teléfono nunca se muestran en páginas públicas, incluidos los perfiles de anfitrión.", "Deine E-Mail-Adresse und Telefonnummer werden nie auf öffentlichen Seiten angezeigt, auch nicht in Gastgeberprofilen.", "Il tuo indirizzo email e il tuo numero di telefono non sono mai mostrati nelle pagine pubbliche, profili host inclusi.", "Seu e-mail e seu telefone nunca aparecem em páginas públicas, incluindo perfis de anfitriões."],
+  ["Shared only when needed", "Partagées seulement si nécessaire", "Compartidos solo si es necesario", "Nur bei Bedarf geteilt", "Condivisi solo se necessario", "Compartilhados só quando necessário"],
+  ["When a booking is confirmed, your name and contact details are shared with the host so they can prepare your stay.", "Quand une réservation est confirmée, votre nom et vos coordonnées sont transmis à l'hôte pour qu'il puisse préparer votre séjour.", "Cuando se confirma una reserva, tu nombre y datos de contacto se comparten con el anfitrión para que prepare tu estancia.", "Sobald eine Buchung bestätigt ist, werden dein Name und deine Kontaktdaten an den Gastgeber weitergegeben, damit er deinen Aufenthalt vorbereiten kann.", "Quando una prenotazione è confermata, il tuo nome e i tuoi contatti vengono condivisi con l'host per preparare il soggiorno.", "Quando uma reserva é confirmada, seu nome e seus contatos são compartilhados com o anfitrião para que ele prepare a estadia."],
+  ["Restricted access", "Accès restreint", "Acceso restringido", "Eingeschränkter Zugriff", "Accesso limitato", "Acesso restrito"],
+  ["Only the guest and the host concerned can read a conversation or open a booking. Administrators only handle support and cancellation requests.", "Seuls le voyageur et l'hôte concernés peuvent lire une conversation ou ouvrir une réservation. Les administrateurs ne traitent que le support et les demandes d'annulation.", "Solo el huésped y el anfitrión implicados pueden leer una conversación o abrir una reserva. Los administradores solo gestionan el soporte y las solicitudes de cancelación.", "Nur der betroffene Gast und Gastgeber können eine Konversation lesen oder eine Buchung öffnen. Administratoren bearbeiten nur Support- und Stornierungsanfragen.", "Solo l'ospite e l'host interessati possono leggere una conversazione o aprire una prenotazione. Gli amministratori gestiscono solo assistenza e richieste di annullamento.", "Somente o hóspede e o anfitrião envolvidos podem ler uma conversa ou abrir uma reserva. Os administradores tratam apenas de suporte e pedidos de cancelamento."],
+  ["Your choices", "Vos choix", "Tus decisiones", "Deine Entscheidungen", "Le tue scelte", "Suas escolhas"],
+  ["You can update your name and password at any time from your profile, and disable the authenticator app whenever you want.", "Vous pouvez modifier votre nom et votre mot de passe à tout moment depuis votre profil, et désactiver l'application d'authentification quand vous le souhaitez.", "Puedes cambiar tu nombre y tu contraseña en cualquier momento desde tu perfil y desactivar la aplicación de autenticación cuando quieras.", "Du kannst deinen Namen und dein Passwort jederzeit im Profil ändern und die Authenticator-App jederzeit deaktivieren.", "Puoi modificare nome e password in qualsiasi momento dal tuo profilo e disattivare l'app di autenticazione quando vuoi.", "Você pode alterar seu nome e sua senha a qualquer momento no perfil e desativar o aplicativo autenticador quando quiser."],
+  ["Payments", "Paiements", "Pagos", "Zahlungen", "Pagamenti", "Pagamentos"],
+  ["Card details handled by Stripe", "Données de carte gérées par Stripe", "Datos de tarjeta gestionados por Stripe", "Kartendaten werden von Stripe verarbeitet", "Dati della carta gestiti da Stripe", "Dados do cartão tratados pelo Stripe"],
+  ["You pay on Stripe's secure checkout page. GetBookForMe never sees or stores your card number.", "Vous payez sur la page de paiement sécurisée de Stripe. GetBookForMe ne conserve jamais votre numéro de carte.", "Pagas en la página de pago segura de Stripe. GetBookForMe nunca ve ni almacena tu número de tarjeta.", "Du bezahlst auf der sicheren Checkout-Seite von Stripe. GetBookForMe sieht oder speichert deine Kartennummer nie.", "Paghi sulla pagina di pagamento sicura di Stripe. GetBookForMe non vede né conserva mai il numero della tua carta.", "Você paga na página de pagamento segura do Stripe. O GetBookForMe nunca vê nem armazena o número do seu cartão."],
+  ["Verified confirmations", "Confirmations vérifiées", "Confirmaciones verificadas", "Geprüfte Bestätigungen", "Conferme verificate", "Confirmações verificadas"],
+  ["A booking is marked as paid only after Stripe confirms the payment, and Stripe notifications are signature-checked.", "Une réservation n'est marquée payée qu'après confirmation du paiement par Stripe, et les notifications de Stripe sont vérifiées par signature.", "Una reserva se marca como pagada solo cuando Stripe confirma el pago, y las notificaciones de Stripe se verifican mediante firma.", "Eine Buchung gilt erst als bezahlt, wenn Stripe die Zahlung bestätigt, und Stripe-Benachrichtigungen werden per Signatur geprüft.", "Una prenotazione è segnata come pagata solo dopo la conferma di Stripe e le notifiche di Stripe sono verificate tramite firma.", "Uma reserva só é marcada como paga depois que o Stripe confirma o pagamento, e as notificações do Stripe têm a assinatura verificada."],
+  ["Protected payouts", "Versements protégés", "Pagos protegidos", "Geschützte Auszahlungen", "Pagamenti protetti", "Repasses protegidos"],
+  ["Hosts are paid through Stripe Connect, once they have completed Stripe's account verification.", "Les hôtes sont payés via Stripe Connect, une fois la vérification de leur compte par Stripe terminée.", "Los anfitriones cobran mediante Stripe Connect, una vez completada la verificación de su cuenta por Stripe.", "Gastgeber werden über Stripe Connect bezahlt, sobald sie die Kontoverifizierung von Stripe abgeschlossen haben.", "Gli host vengono pagati tramite Stripe Connect, dopo aver completato la verifica dell'account da parte di Stripe.", "Os anfitriões recebem via Stripe Connect, depois de concluírem a verificação da conta pelo Stripe."],
+  ["Refunds you can trust", "Des remboursements fiables", "Reembolsos fiables", "Verlässliche Erstattungen", "Rimborsi affidabili", "Reembolsos confiáveis"],
+  ["Approved cancellations are refunded through Stripe to your original payment method, following the cancellation policy.", "Les annulations approuvées sont remboursées via Stripe sur votre moyen de paiement d'origine, selon la politique d'annulation.", "Las cancelaciones aprobadas se reembolsan a través de Stripe a tu método de pago original, según la política de cancelación.", "Genehmigte Stornierungen werden über Stripe auf deine ursprüngliche Zahlungsmethode erstattet, gemäß den Stornierungsbedingungen.", "Gli annullamenti approvati sono rimborsati tramite Stripe sul metodo di pagamento originale, secondo la politica di cancellazione.", "Os cancelamentos aprovados são reembolsados pelo Stripe no seu meio de pagamento original, conforme a política de cancelamento."],
+  ["Good practices", "Bonnes pratiques", "Buenas prácticas", "Empfehlungen", "Buone pratiche", "Boas práticas"],
+  ["Use a long, unique password for your GetBookForMe account.", "Utilisez un mot de passe long et unique pour votre compte GetBookForMe.", "Usa una contraseña larga y única para tu cuenta de GetBookForMe.", "Verwende ein langes, einzigartiges Passwort für dein GetBookForMe-Konto.", "Usa una password lunga e unica per il tuo account GetBookForMe.", "Use uma senha longa e única para sua conta GetBookForMe."],
+  ["Enable the authenticator app in your profile so you can recover your account.", "Activez l'application d'authentification dans votre profil pour pouvoir récupérer votre compte.", "Activa la aplicación de autenticación en tu perfil para poder recuperar tu cuenta.", "Aktiviere die Authenticator-App in deinem Profil, um dein Konto wiederherstellen zu können.", "Attiva l'app di autenticazione nel tuo profilo per poter recuperare il tuo account.", "Ative o aplicativo autenticador no seu perfil para poder recuperar sua conta."],
+  ["Never share your verification codes with anyone.", "Ne communiquez jamais vos codes de vérification à qui que ce soit.", "No compartas nunca tus códigos de verificación con nadie.", "Gib deine Bestätigungscodes niemals an andere weiter.", "Non condividere mai i tuoi codici di verifica con nessuno.", "Nunca compartilhe seus códigos de verificação com ninguém."],
+  ["Pay only through the GetBookForMe checkout and keep your conversations on the platform.", "Payez uniquement via le paiement GetBookForMe et gardez vos échanges sur la plateforme.", "Paga solo a través del pago de GetBookForMe y mantén tus conversaciones en la plataforma.", "Bezahle nur über den GetBookForMe-Checkout und führe deine Gespräche auf der Plattform.", "Paga solo tramite il checkout di GetBookForMe e mantieni le conversazioni sulla piattaforma.", "Pague apenas pelo checkout do GetBookForMe e mantenha suas conversas na plataforma."],
+  ["Manage my security", "Gérer ma sécurité", "Gestionar mi seguridad", "Meine Sicherheit verwalten", "Gestisci la mia sicurezza", "Gerenciar minha segurança"],
 ];
 
 const LANG_ORDER: Lang[] = ["fr", "es", "de", "it", "pt"];
@@ -625,7 +868,7 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 // ─── API Helper ─────────────────────────────────────────────────
 
-const API_URL = (import.meta as any).env?.VITE_API_URL || "https://backend-logement-production.up.railway.app";
+const API_URL = (import.meta as any).env?.VITE_API_URL || "http://localhost:8000";
 
 async function api<T = any>(
   path: string,
@@ -756,7 +999,7 @@ export default function StayHavenApp() {
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<null | (() => void)>(null);
-  const [authModal, setAuthModal] = useState<null | "login" | "register">(null);
+  const [authModal, setAuthModal] = useState<null | "login" | "register" | "forgot">(null);
   const [lang, setLang] = useState<Lang>(currentLang);
   const [unreadNotifs, setUnreadNotifs] = useState(0);
   const [soundOn, setSoundOn] = useState(getStoredSound());
@@ -1046,7 +1289,12 @@ export default function StayHavenApp() {
           <AdminPage user={user} onNavigate={navigate} showToast={showToast} />
         )}
         {page === "profile" && (
-          <ProfilePage user={user} onNavigate={navigate} showToast={showToast} />
+          <ProfilePage
+            user={user}
+            onNavigate={navigate}
+            showToast={showToast}
+            onUserUpdate={setUser}
+          />
         )}
         {page === "messages" && !conversationIdParam && (
           <MessagesListPage user={user} onNavigate={navigate} />
@@ -1069,7 +1317,13 @@ export default function StayHavenApp() {
             onReadUpdate={() => { lastUnreadRef.current = 0; setUnreadNotifs(0); }}
           />
         )}
-        {page !== "" && !["search","listing","favorites","bookings","booking","host","admin","profile","messages","host-profile","notifications"].includes(page) && (
+        {page === "about" && (
+          <AboutPage onNavigate={navigate} />
+        )}
+        {page === "security" && (
+          <SecurityPage onNavigate={navigate} />
+        )}
+        {page !== "" && !["search","listing","favorites","bookings","booking","host","admin","profile","messages","host-profile","notifications","about","security"].includes(page) && (
           <div className="empty-state">
             <h3>{t("Page not found")}</h3>
             <p>{t("The page you're looking for doesn't exist.")}</p>
@@ -1082,7 +1336,7 @@ export default function StayHavenApp() {
 
       <Footer onNavigate={navigate} />
 
-      {authModal && (
+      {authModal && authModal !== "forgot" && (
         <AuthModal
           mode={authModal}
           onClose={() => {
@@ -1091,6 +1345,18 @@ export default function StayHavenApp() {
           }}
           onSwitch={(m) => setAuthModal(m)}
           onSuccess={handleLogin}
+          onForgot={() => setAuthModal("forgot")}
+          showToast={showToast}
+        />
+      )}
+
+      {authModal === "forgot" && (
+        <ForgotPasswordModal
+          onClose={() => {
+            setAuthModal(null);
+            setPendingAction(null);
+          }}
+          onBack={() => setAuthModal("login")}
           showToast={showToast}
         />
       )}
@@ -1214,7 +1480,7 @@ function Header({
       <div className="container header-inner">
         <div className="logo" onClick={() => onNavigate("/")}>
           <Compass size={28} color="var(--primary)" />
-          <span>Book4Me</span>
+          <span>GetBookForMe</span>
         </div>
 
         <div className="header-search-wrap">
@@ -1332,33 +1598,179 @@ function Header({
   );
 }
 
+// Barre de recherche combinée : destination + dates + voyageurs.
+// Repliée dans l'en-tête (résumé des critères) ; un clic ouvre le panneau complet.
 function SearchPill({ onNavigate }: { onNavigate: (to: string) => void }) {
+  const [open, setOpen] = useState(false);
   const [destination, setDestination] = useState("");
+  const [checkIn, setCheckIn] = useState("");
+  const [checkOut, setCheckOut] = useState("");
+  const [guests, setGuests] = useState("");
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const today = new Date().toISOString().split("T")[0];
+
+  // Fermeture du panneau : clic à l'extérieur ou touche Échap
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
 
   const handleSearch = () => {
     const params = new URLSearchParams();
-    if (destination) params.set("destination", destination);
+    if (destination.trim()) params.set("destination", destination.trim());
+    if (checkIn) params.set("check_in", checkIn);
+    if (checkOut) params.set("check_out", checkOut);
+    if (guests) params.set("guests", guests);
+    setOpen(false);
     onNavigate(`/search?${params.toString()}`);
   };
 
+  const fmtShort = (s: string) =>
+    new Date(`${s}T00:00:00`).toLocaleDateString(LOCALES[currentLang], { day: "numeric", month: "short" });
+
+  const datesSummary =
+    checkIn && checkOut ? `${fmtShort(checkIn)} → ${fmtShort(checkOut)}`
+    : checkIn ? `${fmtShort(checkIn)} →`
+    : checkOut ? `→ ${fmtShort(checkOut)}`
+    : "—";
+
+  const guestsSummary = guests ? t(`${guests}+ guests`) : t("Any guests");
+
+  const summaryStyle: React.CSSProperties = {
+    fontSize: 13,
+    color: "var(--neutral-600)",
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+  };
+
+  const fieldLabel: React.CSSProperties = {
+    display: "block",
+    fontSize: 12,
+    fontWeight: 600,
+    marginBottom: 4,
+    color: "var(--neutral-800)",
+  };
+
   return (
-    <div className="search-bar" onClick={(e) => {
-      if (e.target === e.currentTarget) handleSearch();
-    }}>
-      <div className="search-segment" style={{ flex: 1 }}>
-        <label>{t("Where")}</label>
-        <input
-          type="text"
-          placeholder={t("Search destinations")}
-          value={destination}
-          onChange={(e) => setDestination(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-          onClick={(e) => e.stopPropagation()}
-        />
+    <div ref={wrapRef}>
+      {/* Barre repliée : résumé destination · dates · voyageurs */}
+      <div
+        className="search-bar"
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        onClick={() => setOpen(true)}
+        onKeyDown={(e) => { if (e.key === "Enter") setOpen(true); }}
+      >
+        <div className="search-segment" style={{ flex: 1, maxWidth: 170 }}>
+          <label>{t("Where")}</label>
+          <span style={summaryStyle}>{destination || t("Search destinations")}</span>
+        </div>
+        <div className="search-segment" style={{ maxWidth: 150 }}>
+          <label>{t("Dates")}</label>
+          <span style={summaryStyle}>{datesSummary}</span>
+        </div>
+        <div className="search-segment" style={{ maxWidth: 130 }}>
+          <label>{t("Guests")}</label>
+          <span style={summaryStyle}>{guestsSummary}</span>
+        </div>
+        <button
+          className="search-btn"
+          onClick={(e) => { e.stopPropagation(); handleSearch(); }}
+          aria-label={t("Search")}
+        >
+          <Search size={18} />
+        </button>
       </div>
-      <button className="search-btn" onClick={handleSearch} aria-label={t("Search")}>
-        <Search size={18} />
-      </button>
+
+      {/* Panneau complet : tous les critères en même temps */}
+      {open && (
+        <div
+          style={{
+            position: "absolute",
+            top: "100%",
+            left: 0,
+            right: 0,
+            zIndex: 160,
+            background: "#fff",
+            borderBottom: "1px solid var(--neutral-200)",
+            boxShadow: "var(--shadow-lg)",
+            padding: "16px 0",
+          }}
+        >
+          <div
+            className="container"
+            style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}
+          >
+            <div style={{ flex: "2 1 220px", minWidth: 0 }}>
+              <label style={fieldLabel}>{t("Where")}</label>
+              <input
+                className="filter-input"
+                type="text"
+                autoFocus
+                placeholder={t("Search destinations")}
+                value={destination}
+                onChange={(e) => setDestination(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+              />
+            </div>
+            <div style={{ flex: "1 1 150px", minWidth: 0 }}>
+              <label style={fieldLabel}>{t("Check-in")}</label>
+              <input
+                className="filter-input"
+                type="date"
+                min={today}
+                value={checkIn}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setCheckIn(v);
+                  if (v && checkOut && checkOut <= v) setCheckOut("");
+                }}
+              />
+            </div>
+            <div style={{ flex: "1 1 150px", minWidth: 0 }}>
+              <label style={fieldLabel}>{t("Check-out")}</label>
+              <input
+                className="filter-input"
+                type="date"
+                min={checkIn || today}
+                value={checkOut}
+                onChange={(e) => setCheckOut(e.target.value)}
+              />
+            </div>
+            <div style={{ flex: "1 1 150px", minWidth: 0 }}>
+              <label style={fieldLabel}>{t("Guests")}</label>
+              <select
+                className="filter-input"
+                value={guests}
+                onChange={(e) => setGuests(e.target.value)}
+              >
+                <option value="">{t("Any guests")}</option>
+                <option value="1">{t("1+ guests")}</option>
+                <option value="2">{t("2+ guests")}</option>
+                <option value="4">{t("4+ guests")}</option>
+                <option value="6">{t("6+ guests")}</option>
+                <option value="8">{t("8+ guests")}</option>
+              </select>
+            </div>
+            <button className="btn btn-primary" onClick={handleSearch}>
+              <Search size={18} /> {t("Search")}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1373,7 +1785,7 @@ function Footer({ onNavigate }: { onNavigate: (to: string) => void }) {
           <div className="footer-col">
             <h4>{t("Support")}</h4>
             <a onClick={() => onNavigate("/")}>{t("Help Center")}</a>
-            <a onClick={() => onNavigate("/")}>{t("Safety information")}</a>
+            <a onClick={() => onNavigate("/security")}>{t("Safety information")}</a>
             <a onClick={() => onNavigate("/")}>{t("Cancellation options")}</a>
           </div>
           <div className="footer-col">
@@ -1383,8 +1795,9 @@ function Footer({ onNavigate }: { onNavigate: (to: string) => void }) {
             <a onClick={() => onNavigate("/host")}>{t("Responsible hosting")}</a>
           </div>
           <div className="footer-col">
-            <h4>Book4Me</h4>
-            <a onClick={() => onNavigate("/")}>{t("About us")}</a>
+            <h4>GetBookForMe</h4>
+            <a onClick={() => onNavigate("/about")}>{t("What is GetBookForMe?")}</a>
+            <a onClick={() => onNavigate("/security")}>{t("Security & privacy")}</a>
             <a onClick={() => onNavigate("/")}>{t("Newsroom")}</a>
             <a onClick={() => onNavigate("/")}>{t("Careers")}</a>
           </div>
@@ -1397,11 +1810,310 @@ function Footer({ onNavigate }: { onNavigate: (to: string) => void }) {
           </div>
         </div>
         <div className="footer-bottom">
-          <span>{t("© 2026 Book4Me — Find your perfect stay")}</span>
+          <span>{t("© 2026 GetBookForMe — Find your perfect stay")}</span>
           <span>{t("Privacy · Terms · Sitemap")}</span>
         </div>
       </div>
     </footer>
+  );
+}
+
+// ─── Pages d'information : Qu'est-ce que GetBookForMe ? / Sécurité et confidentialité ───
+
+function InfoCard({
+  icon: Icon, title, text,
+}: {
+  icon: React.ComponentType<{ size?: number }>;
+  title: string;
+  text: string;
+}) {
+  return (
+    <div className="info-card">
+      <div className="info-card-icon"><Icon size={22} /></div>
+      <h3>{t(title)}</h3>
+      <p>{t(text)}</p>
+    </div>
+  );
+}
+
+function InfoSteps({ steps }: { steps: { title: string; text: string }[] }) {
+  return (
+    <div className="info-steps">
+      {steps.map((s, i) => (
+        <div key={s.title} className="info-step">
+          <div className="info-step-num">{i + 1}</div>
+          <h3>{t(s.title)}</h3>
+          <p>{t(s.text)}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AboutPage({ onNavigate }: { onNavigate: (to: string) => void }) {
+  const travelerSteps = [
+    {
+      title: "Find your place",
+      text: "Search by destination, dates and number of guests, then refine with price, rooms and amenities.",
+    },
+    {
+      title: "Compare with confidence",
+      text: "Browse photos, amenities, house rules and reviews from real guests.",
+    },
+    {
+      title: "Book and pay securely",
+      text: "Pay by card through Stripe Checkout. Your booking is confirmed once the payment is verified.",
+    },
+    {
+      title: "Stay and share",
+      text: "Message your host, enjoy your stay, then leave a review to help the community.",
+    },
+  ];
+
+  const hostSteps = [
+    {
+      title: "Create your host account",
+      text: "Become a host in one click and access your host dashboard.",
+    },
+    {
+      title: "Connect Stripe",
+      text: "Complete your Stripe Connect setup to publish listings and receive payouts.",
+    },
+    {
+      title: "Publish your listing",
+      text: "Add photos, price, amenities and house rules, then publish when you are ready.",
+    },
+    {
+      title: "Manage and get paid",
+      text: "Follow reservations, block dates in your calendar, chat with guests and track your payouts.",
+    },
+  ];
+
+  const advantages = [
+    {
+      icon: Star,
+      title: "Honest reviews",
+      text: "Only guests with a paid booking can review, and only after their stay has ended.",
+    },
+    {
+      icon: CreditCard,
+      title: "Secure payments",
+      text: "Payments are processed by Stripe. GetBookForMe never sees or stores your card details.",
+    },
+    {
+      icon: Calendar,
+      title: "Fair cancellation policy",
+      text: "A clear policy applies to every listing: 100% refund more than 7 days before arrival and 50% between 24 hours and 7 days.",
+    },
+    {
+      icon: MessageSquare,
+      title: "Direct messaging",
+      text: "Once a booking is confirmed, you can chat directly with your host or guest, with instant notifications.",
+    },
+    {
+      icon: Globe,
+      title: "Six languages",
+      text: "Use the platform in English, French, Spanish, German, Italian or Portuguese.",
+    },
+    {
+      icon: Building2,
+      title: "Powerful host tools",
+      text: "Availability calendar, payment history, house rules and a public host profile.",
+    },
+  ];
+
+  return (
+    <div className="container info-page">
+      <section className="info-hero">
+        <span className="info-eyebrow">{t("About GetBookForMe")}</span>
+        <h1>{t("What is GetBookForMe?")}</h1>
+        <p className="info-lead">
+          {t("GetBookForMe is a marketplace that connects travelers with hosts offering apartments, houses, villas, cabins and more, for a simple, transparent and secure booking experience.")}
+        </p>
+      </section>
+
+      <section className="info-section">
+        <h2 className="info-section-title">{t("Our mission")}</h2>
+        <p className="info-section-sub">
+          {t("We want booking a stay to be as easy as it is reassuring. Travelers find the right place with clear prices, honest reviews and a fair cancellation policy. Hosts get professional tools to share their space and be paid securely.")}
+        </p>
+      </section>
+
+      <section className="info-section">
+        <h2 className="info-section-title">{t("How it works")}</h2>
+        <h3 className="info-subtitle">{t("For travelers")}</h3>
+        <InfoSteps steps={travelerSteps} />
+        <h3 className="info-subtitle">{t("For hosts")}</h3>
+        <InfoSteps steps={hostSteps} />
+      </section>
+
+      <section className="info-section">
+        <h2 className="info-section-title">{t("Why choose GetBookForMe")}</h2>
+        <div className="info-grid">
+          {advantages.map((a) => (
+            <InfoCard key={a.title} icon={a.icon} title={a.title} text={a.text} />
+          ))}
+        </div>
+      </section>
+
+      <section className="info-cta">
+        <h2>{t("Ready to get started?")}</h2>
+        <p>{t("Find your next stay or start hosting today.")}</p>
+        <div className="info-cta-actions">
+          <button className="btn btn-primary btn-lg" onClick={() => onNavigate("/search")}>
+            <Search size={20} /> {t("Start exploring")}
+          </button>
+          <button className="btn btn-outline btn-lg" onClick={() => onNavigate("/host")}>
+            <Sparkles size={20} /> {t("Become a host")}
+          </button>
+          <button className="btn btn-outline btn-lg" onClick={() => onNavigate("/security")}>
+            <Shield size={20} /> {t("Security & privacy")}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function SecurityPage({ onNavigate }: { onNavigate: (to: string) => void }) {
+  const accountItems = [
+    {
+      icon: Lock,
+      title: "Secure passwords",
+      text: "Passwords are never stored in clear text: they are hashed with a strong one-way algorithm before being saved.",
+    },
+    {
+      icon: Shield,
+      title: "Protected sessions",
+      text: "Each session uses a signed token that expires automatically, and private pages require you to be logged in.",
+    },
+    {
+      icon: Sparkles,
+      title: "Authenticator app",
+      text: "Enable an authenticator app such as Google Authenticator or Authy to reset your password safely. Each code works only once.",
+    },
+    {
+      icon: AlertCircle,
+      title: "Brute-force protection",
+      text: "Password reset attempts are limited, and error messages never reveal whether an email address has an account.",
+    },
+  ];
+
+  const dataItems = [
+    {
+      icon: EyeOff,
+      title: "Private by default",
+      text: "Your email address and phone number are never shown on public pages, including host profiles.",
+    },
+    {
+      icon: Users,
+      title: "Shared only when needed",
+      text: "When a booking is confirmed, your name and contact details are shared with the host so they can prepare your stay.",
+    },
+    {
+      icon: Lock,
+      title: "Restricted access",
+      text: "Only the guest and the host concerned can read a conversation or open a booking. Administrators only handle support and cancellation requests.",
+    },
+    {
+      icon: User,
+      title: "Your choices",
+      text: "You can update your name and password at any time from your profile, and disable the authenticator app whenever you want.",
+    },
+  ];
+
+  const paymentItems = [
+    {
+      icon: CreditCard,
+      title: "Card details handled by Stripe",
+      text: "You pay on Stripe's secure checkout page. GetBookForMe never sees or stores your card number.",
+    },
+    {
+      icon: CheckCircle2,
+      title: "Verified confirmations",
+      text: "A booking is marked as paid only after Stripe confirms the payment, and Stripe notifications are signature-checked.",
+    },
+    {
+      icon: DollarSign,
+      title: "Protected payouts",
+      text: "Hosts are paid through Stripe Connect, once they have completed Stripe's account verification.",
+    },
+    {
+      icon: TrendingUp,
+      title: "Refunds you can trust",
+      text: "Approved cancellations are refunded through Stripe to your original payment method, following the cancellation policy.",
+    },
+  ];
+
+  const practices = [
+    "Use a long, unique password for your GetBookForMe account.",
+    "Enable the authenticator app in your profile so you can recover your account.",
+    "Never share your verification codes with anyone.",
+    "Pay only through the GetBookForMe checkout and keep your conversations on the platform.",
+  ];
+
+  return (
+    <div className="container info-page">
+      <section className="info-hero">
+        <span className="info-eyebrow">{t("Security")}</span>
+        <h1>{t("Security & privacy")}</h1>
+        <p className="info-lead">
+          {t("Here is how GetBookForMe protects your account, your personal data and your payments.")}
+        </p>
+      </section>
+
+      <section className="info-section">
+        <h2 className="info-section-title">{t("Account protection")}</h2>
+        <div className="info-grid">
+          {accountItems.map((a) => (
+            <InfoCard key={a.title} icon={a.icon} title={a.title} text={a.text} />
+          ))}
+        </div>
+      </section>
+
+      <section className="info-section">
+        <h2 className="info-section-title">{t("Personal data")}</h2>
+        <div className="info-grid">
+          {dataItems.map((a) => (
+            <InfoCard key={a.title} icon={a.icon} title={a.title} text={a.text} />
+          ))}
+        </div>
+      </section>
+
+      <section className="info-section">
+        <h2 className="info-section-title">{t("Payments")}</h2>
+        <div className="info-grid">
+          {paymentItems.map((a) => (
+            <InfoCard key={a.title} icon={a.icon} title={a.title} text={a.text} />
+          ))}
+        </div>
+      </section>
+
+      <section className="info-section">
+        <h2 className="info-section-title">{t("Good practices")}</h2>
+        <ul className="info-list">
+          {practices.map((p) => (
+            <li key={p}>
+              <CheckCircle2 size={20} />
+              <span>{t(p)}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section className="info-cta">
+        <h2>{t("Security & privacy")}</h2>
+        <p>{t("Here is how GetBookForMe protects your account, your personal data and your payments.")}</p>
+        <div className="info-cta-actions">
+          <button className="btn btn-primary btn-lg" onClick={() => onNavigate("/profile")}>
+            <Shield size={20} /> {t("Manage my security")}
+          </button>
+          <button className="btn btn-outline btn-lg" onClick={() => onNavigate("/about")}>
+            {t("What is GetBookForMe?")}
+          </button>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -1468,12 +2180,13 @@ function MobileNav({
 // ─── Auth Modal ─────────────────────────────────────────────────
 
 function AuthModal({
-  mode, onClose, onSwitch, onSuccess, showToast,
+  mode, onClose, onSwitch, onSuccess, onForgot, showToast,
 }: {
   mode: "login" | "register";
   onClose: () => void;
   onSwitch: (m: "login" | "register") => void;
   onSuccess: (token: string, user: User) => void;
+  onForgot: () => void;
   showToast: (msg: string) => void;
 }) {
   const [email, setEmail] = useState("");
@@ -1570,6 +2283,20 @@ function AuthModal({
                 placeholder={t("At least 6 characters")}
               />
             </div>
+            {mode === "login" && (
+              <div style={{ textAlign: "right", marginBottom: 12, marginTop: -8 }}>
+                <button
+                  type="button"
+                  onClick={onForgot}
+                  style={{
+                    color: "var(--primary)", fontWeight: 600, fontSize: 13,
+                    textDecoration: "underline",
+                  }}
+                >
+                  {t("Forgot your password?")}
+                </button>
+              </div>
+            )}
             {mode === "register" && (
               <div className="form-group">
                 <label>{t("Phone (optional)")}</label>
@@ -1603,6 +2330,138 @@ function AuthModal({
             ) : (
               <>{t("Don't have an account?")} <button onClick={() => onSwitch("register")}>{t("Sign up")}</button></>
             )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Forgot Password Modal (réinitialisation par code d'authentificateur) ───
+
+function ForgotPasswordModal({
+  onClose, onBack, showToast,
+}: {
+  onClose: () => void;
+  onBack: () => void;
+  showToast: (msg: string) => void;
+}) {
+  const [email, setEmail] = useState("");
+  const [code, setCode] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    if (newPassword.length < 6) {
+      setError(t("Password must be at least 6 characters"));
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError(t("Passwords do not match"));
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await api("/api/auth/forgot-password", {
+        method: "POST",
+        body: JSON.stringify({ email, code, new_password: newPassword }),
+      });
+      showToast(t("Password reset successfully. You can now log in."));
+      onBack();
+    } catch (err: any) {
+      setError(t(err.message || "Something went wrong"));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>{t("Reset your password")}</h3>
+          <button className="modal-close" onClick={onClose} aria-label={t("Close")}>
+            <X size={20} />
+          </button>
+        </div>
+        <div className="modal-body">
+          <p style={{ color: "var(--neutral-600)", fontSize: 14, marginBottom: 8 }}>
+            {t("Enter your email, the 6-digit code shown in your authenticator app (Google Authenticator, Authy…) and your new password.")}
+          </p>
+          <p className="text-sm color-neutral-500" style={{ marginBottom: 16 }}>
+            {t("This only works if you enabled the authenticator in your profile beforehand.")}
+          </p>
+          <form onSubmit={handleSubmit}>
+            <div className="form-group">
+              <label>{t("Email")}</label>
+              <input
+                type="email"
+                className="form-input"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                autoComplete="email"
+                placeholder="you@example.com"
+              />
+            </div>
+            <div className="form-group">
+              <label>{t("Verification code")}</label>
+              <input
+                className="form-input"
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                required
+                inputMode="numeric"
+                pattern="[0-9]{6}"
+                maxLength={6}
+                autoComplete="one-time-code"
+                placeholder="123456"
+              />
+            </div>
+            <div className="form-group">
+              <label>{t("New password")}</label>
+              <input
+                type="password"
+                className="form-input"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                required
+                autoComplete="new-password"
+                placeholder={t("At least 6 characters")}
+              />
+            </div>
+            <div className="form-group">
+              <label>{t("Confirm new password")}</label>
+              <input
+                type="password"
+                className="form-input"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+                autoComplete="new-password"
+              />
+            </div>
+            {error && (
+              <div className="form-error" style={{ marginBottom: 12 }}>
+                <AlertCircle size={14} style={{ display: "inline", marginRight: 4 }} />
+                {error}
+              </div>
+            )}
+            <button
+              type="submit"
+              className="btn btn-primary btn-block btn-lg"
+              disabled={submitting}
+            >
+              {submitting ? <Loader2 size={20} className="animate-spin" /> : null}
+              {t("Reset password")}
+            </button>
+          </form>
+          <div className="form-switch">
+            <button onClick={onBack}>{t("Back to login")}</button>
           </div>
         </div>
       </div>
@@ -1666,7 +2525,7 @@ function HomePage({
     });
   };
 
-  const heroImg = "https://images.pexels.com/photos/2476632/pexels-photo-2476632.jpeg?auto=compress&cs=tinysrgb&h=650&w=940";
+  const heroImg = "https://i.postimg.cc/bJnBn4RH/e256891e-55e3-4ae3-9593-1b31b0cf1b7c.png";
 
   return (
     <div>
@@ -1797,6 +2656,16 @@ function SearchPage({
   const [allAmenities, setAllAmenities] = useState<Amenity[]>([]);
   const [favorites, setFavorites] = useState<Set<number>>(new Set());
   const [showFilters, setShowFilters] = useState(false);
+
+  // Quand l'URL change (ex. nouvelle recherche depuis la barre de l'en-tête alors
+  // qu'on est déjà sur cette page), on recharge les critères depuis l'URL.
+  useEffect(() => {
+    setDestination(initialParams.get("destination") || "");
+        setCheckIn(initialParams.get("check_in") || "");
+    setCheckOut(initialParams.get("check_out") || "");
+    setGuests(initialParams.get("guests") || "");
+    setPropertyType(initialParams.get("property_type") || "");
+  }, [initialParams]);
 
   // Load amenities
   useEffect(() => {
@@ -2156,6 +3025,12 @@ function ListingDetailPage({
 
   const today = new Date().toISOString().split("T")[0];
 
+  const ruleItem = (ok: boolean | undefined, yes: string, no: string) => (
+    <div className="amenity-item">
+      {ok ? <CheckCircle2 /> : <XCircle />} {ok ? t(yes) : t(no)}
+    </div>
+  );
+
   return (
     <div className="container listing-detail">
       <button
@@ -2248,9 +3123,49 @@ function ListingDetailPage({
             </div>
           )}
 
+          <div className="detail-section">
+            <h3>{t("House rules")}</h3>
+            <div className="amenities-grid">
+              <div className="amenity-item">
+                <Clock /> {t("Check-in from {time}", { time: listing.check_in_time || "15:00" })}
+              </div>
+              <div className="amenity-item">
+                <Clock /> {t("Check-out before {time}", { time: listing.check_out_time || "11:00" })}
+              </div>
+              {ruleItem(listing.pets_allowed, "Pets allowed", "No pets")}
+              {ruleItem(listing.smoking_allowed, "Smoking allowed", "No smoking")}
+              {ruleItem(listing.parties_allowed, "Parties allowed", "No parties")}
+              {ruleItem(listing.events_allowed, "Events allowed", "No events")}
+              {ruleItem(listing.children_allowed !== false, "Children welcome", "Children not allowed")}
+            </div>
+            {listing.arrival_instructions && (
+              <>
+                <h4 style={{ marginTop: 16, marginBottom: 6 }}>{t("Arrival instructions")}</h4>
+                <p style={{ color: "var(--neutral-700)", lineHeight: 1.7, whiteSpace: "pre-wrap" }}>
+                  {listing.arrival_instructions}
+                </p>
+              </>
+            )}
+            {listing.additional_rules && (
+              <>
+                <h4 style={{ marginTop: 16, marginBottom: 6 }}>{t("Additional rules")}</h4>
+                <p style={{ color: "var(--neutral-700)", lineHeight: 1.7, whiteSpace: "pre-wrap" }}>
+                  {listing.additional_rules}
+                </p>
+              </>
+            )}
+          </div>
+
           {listing.reviews && listing.reviews.length > 0 && (
             <div className="detail-section">
-              <h3>{t("Reviews ({n})", { n: listing.review_count ?? listing.reviews.length })}</h3>
+              <h3 style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                {listing.avg_rating ? (
+                  <span className="rating-badge" style={{ fontSize: 18, fontWeight: 700 }}>
+                    <Star /> {listing.avg_rating}
+                  </span>
+                ) : null}
+                <span>{t("Reviews ({n})", { n: listing.review_count ?? listing.reviews.length })}</span>
+              </h3>
               {listing.reviews.map((r) => (
                 <div key={r.id} style={{ padding: "16px 0", borderBottom: "1px solid var(--neutral-200)" }}>
                   <div className="flex items-center gap-12 mb-16">
@@ -2261,8 +3176,15 @@ function ListingDetailPage({
                       <div style={{ fontWeight: 600 }}>
                         {r.user?.first_name} {r.user?.last_name}
                       </div>
-                      <div className="rating-badge">
-                        <Star /> {r.rating}
+                      <div className="flex items-center gap-8">
+                        <span className="rating-badge">
+                          <Star /> {r.rating}
+                        </span>
+                        {r.created_at && (
+                          <span className="text-sm color-neutral-500">
+                            {new Date(r.created_at).toLocaleDateString(LOCALES[currentLang])}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -2447,7 +3369,8 @@ function BookingsPage({
 }) {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"upcoming" | "past" | "all">("all");
+  const [tab, setTab] = useState<"upcoming" | "past" | "all" | "cancellations">("all");
+  const [cancelTarget, setCancelTarget] = useState<Booking | null>(null);
 
   const load = useCallback(() => {
     api<{ bookings: Booking[] }>("/api/bookings", {}, getToken() || undefined)
@@ -2494,9 +3417,12 @@ function BookingsPage({
         <button className={`tab ${tab === "all" ? "active" : ""}`} onClick={() => setTab("all")}>{t("All")}</button>
         <button className={`tab ${tab === "upcoming" ? "active" : ""}`} onClick={() => setTab("upcoming")}>{t("Upcoming")}</button>
         <button className={`tab ${tab === "past" ? "active" : ""}`} onClick={() => setTab("past")}>{t("Past")}</button>
+        <button className={`tab ${tab === "cancellations" ? "active" : ""}`} onClick={() => setTab("cancellations")}>{t("Cancellations")}</button>
       </div>
 
-      {filtered.length === 0 ? (
+      {tab === "cancellations" ? (
+        <CancellationHistoryList onNavigate={onNavigate} reloadKey={bookings.length} />
+      ) : filtered.length === 0 ? (
         <div className="empty-state">
           <Calendar size={48} />
           <h3>{t("No trips yet")}</h3>
@@ -2513,22 +3439,41 @@ function BookingsPage({
               booking={b}
               onClick={() => onNavigate(`/booking/${b.id}`)}
               onCancel={() => cancelBooking(b.id)}
+              onRequestCancel={() => setCancelTarget(b)}
             />
           ))}
         </div>
+      )}
+
+      {cancelTarget && (
+        <CancellationModal
+          booking={cancelTarget}
+          onClose={() => setCancelTarget(null)}
+          onDone={() => { setCancelTarget(null); load(); }}
+          showToast={showToast}
+        />
       )}
     </div>
   );
 }
 
 function BookingItem({
-  booking, onClick, onCancel,
+  booking, onClick, onCancel, onRequestCancel,
 }: {
   booking: Booking;
   onClick: () => void;
   onCancel?: () => void;
+  onRequestCancel?: () => void;
 }) {
   const img = booking.listing?.images?.[0]?.image_url || "";
+  const todayStr = new Date().toISOString().split("T")[0];
+  // Séjour terminé, payé, et pas encore d'avis : on invite à laisser un avis
+  const canReview = booking.status === "paid" && booking.check_out <= todayStr && !booking.has_review;
+  // Annulation possible : payée, séjour pas commencé, aucune demande active (le serveur revérifie tout)
+  const canRequestCancel =
+    booking.status === "paid" &&
+    booking.check_in >= todayStr &&
+    (!booking.cancellation || booking.cancellation.status === "rejected");
   return (
     <div className="booking-item" onClick={onClick} style={{ cursor: "pointer" }}>
       <div className="booking-item-img">
@@ -2540,9 +3485,14 @@ function BookingItem({
         <p>
           {booking.check_in} → {booking.check_out} · {t("{n} nights", { n: booking.nights })} · {t(booking.guests === 1 ? "{n} guest" : "{n} guests", { n: booking.guests })}
         </p>
-        <div className="flex items-center gap-12 mt-16">
+        <div className="flex items-center gap-12 mt-16" style={{ flexWrap: "wrap" }}>
           <span className={`status-badge status-${booking.status}`}>{t(booking.status)}</span>
           <span style={{ fontWeight: 600 }}>${booking.total.toFixed(2)}</span>
+          {booking.cancellation && (
+            <span className={`status-badge status-${cancellationBadgeClass(booking.cancellation.status)}`}>
+              {t("Cancellation request")}: {t(booking.cancellation.status)}
+            </span>
+          )}
         </div>
       </div>
       {onCancel && booking.status === "pending" && (
@@ -2554,13 +3504,354 @@ function BookingItem({
         </button>
       )}
       {onCancel && booking.status === "paid" && (
-        <button
-          className="btn btn-primary btn-sm"
-          onClick={(e) => { e.stopPropagation(); onClick(); }}
-        >
-          {t("View details")}
-        </button>
+        <div className="flex gap-8 flex-col">
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={(e) => { e.stopPropagation(); onClick(); }}
+          >
+            {canReview ? t("Leave a review") : t("View details")}
+          </button>
+          {canRequestCancel && onRequestCancel && (
+            <button
+              className="btn btn-outline btn-sm"
+              style={{ color: "var(--error)" }}
+              onClick={(e) => { e.stopPropagation(); onRequestCancel(); }}
+            >
+              {t("Cancel my booking")}
+            </button>
+          )}
+        </div>
       )}
+    </div>
+  );
+}
+
+// ─── Cancellation: modal (client) ───────────────────────────────
+
+function CancellationModal({
+  booking, onClose, onDone, showToast,
+}: {
+  booking: Booking;
+  onClose: () => void;
+  onDone: () => void;
+  showToast: (msg: string) => void;
+}) {
+  const [preview, setPreview] = useState<CancellationPreview | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    api<CancellationPreview>(`/api/bookings/${booking.id}/cancellation-preview`, {}, getToken() || undefined)
+      .then(setPreview)
+      .catch((err: any) => setError(t(err.message || "Something went wrong")))
+      .finally(() => setLoading(false));
+  }, [booking.id]);
+
+  const submit = async () => {
+    setError("");
+    setSubmitting(true);
+    try {
+      await api(`/api/bookings/${booking.id}/cancellation-request`, {
+        method: "POST",
+        body: JSON.stringify({ reason: reason.trim() || null }),
+      }, getToken() || undefined);
+      showToast(t("Cancellation request sent"));
+      onDone();
+    } catch (err: any) {
+      setError(t(err.message || "Something went wrong"));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>{t("Cancel my booking")}</h3>
+          <button className="modal-close" onClick={onClose} aria-label={t("Close")}>
+            <X size={20} />
+          </button>
+        </div>
+        <div className="modal-body">
+          {loading ? (
+            <div className="loading-spinner"><div className="spinner" /></div>
+          ) : (
+            <>
+              <p style={{ fontWeight: 600, marginBottom: 8 }}>{booking.listing?.title}</p>
+              <p className="color-neutral-500 text-sm mb-16">{booking.check_in} → {booking.check_out}</p>
+
+              <h4 style={{ marginBottom: 8 }}>{t("Refund policy")}</h4>
+              <ul className="text-sm color-neutral-500" style={{ paddingLeft: 18, marginBottom: 16, lineHeight: 1.7 }}>
+                <li>{t("More than 7 days before arrival: 100% refund")}</li>
+                <li>{t("Between 24 hours and 7 days: 50% refund")}</li>
+                <li>{t("Less than 24 hours: no automatic refund")}</li>
+              </ul>
+
+              {preview && (
+                <div style={{
+                  border: "1px solid var(--neutral-200)", borderRadius: "var(--radius-md)",
+                  padding: 16, marginBottom: 16,
+                }}>
+                  <div className="price-line">
+                    <span>{t("Refund rate")}</span><span>{preview.refund_percent}%</span>
+                  </div>
+                  {preview.already_refunded > 0 && (
+                    <div className="price-line">
+                      <span>{t("Already refunded: {amount}", { amount: `$${preview.already_refunded.toFixed(2)}` })}</span>
+                    </div>
+                  )}
+                  <div className="price-total">
+                    <span>{t("Estimated refund")}</span>
+                    <span>${preview.refundable_amount.toFixed(2)}</span>
+                  </div>
+                </div>
+              )}
+
+              {preview?.eligible && (
+                <>
+                  <div className="form-group">
+                    <label>{t("Reason (optional)")}</label>
+                    <textarea
+                      className="form-input"
+                      value={reason}
+                      onChange={(e) => setReason(e.target.value)}
+                      maxLength={2000}
+                    />
+                  </div>
+                  <p className="text-sm color-neutral-500 mb-16">
+                    {t("Your request will be reviewed by our team. You will be notified at each step.")}
+                  </p>
+                </>
+              )}
+
+              {preview && !preview.eligible && preview.reason && (
+                <div className="form-error mb-16">
+                  <AlertCircle size={14} style={{ display: "inline", marginRight: 4 }} />
+                  {t(preview.reason)}
+                </div>
+              )}
+              {error && (
+                <div className="form-error mb-16">
+                  <AlertCircle size={14} style={{ display: "inline", marginRight: 4 }} />
+                  {error}
+                </div>
+              )}
+
+              <button
+                className="btn btn-primary btn-block btn-lg"
+                onClick={submit}
+                disabled={submitting || !preview?.eligible}
+              >
+                {submitting ? <Loader2 size={20} className="animate-spin" /> : null}
+                {t("Send cancellation request")}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Cancellation: historique (client) ──────────────────────────
+
+function CancellationHistoryList({
+  onNavigate, reloadKey,
+}: {
+  onNavigate: (to: string) => void;
+  reloadKey: number;
+}) {
+  const [items, setItems] = useState<CancellationRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api<{ requests: CancellationRequest[] }>("/api/cancellations", {}, getToken() || undefined)
+      .then((d) => setItems(d.requests))
+      .catch(() => setItems([]))
+      .finally(() => setLoading(false));
+  }, [reloadKey]);
+
+  if (loading) return <div className="loading-spinner"><div className="spinner" /></div>;
+  if (items.length === 0) {
+    return (
+      <div className="empty-state">
+        <h3>{t("No cancellation requests")}</h3>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {items.map((c) => (
+        <div
+          key={c.id}
+          className="booking-item"
+          style={{ cursor: "pointer" }}
+          onClick={() => onNavigate(`/booking/${c.booking_id}`)}
+        >
+          <div className="booking-item-info">
+            <h4>{c.listing?.title || `${t("Booking")} #${c.booking_id}`}</h4>
+            {c.booking && <p>{c.booking.check_in} → {c.booking.check_out}</p>}
+            <p>
+              {t("Refund rate")}: {c.refund_percent}% · {t("Estimated refund")}: ${c.refundable_amount.toFixed(2)}
+            </p>
+            {c.refunded_amount !== null && c.refunded_amount > 0 && (
+              <p>{t("Refunded: {amount}", { amount: `$${c.refunded_amount.toFixed(2)}` })}</p>
+            )}
+            {c.admin_note && <p className="text-sm color-neutral-500">{t("Note: {note}", { note: c.admin_note })}</p>}
+            <div className="flex items-center gap-12 mt-16">
+              <span className={`status-badge status-${cancellationBadgeClass(c.status)}`}>{t(c.status)}</span>
+              {c.created_at && (
+                <span className="text-sm color-neutral-500">
+                  {new Date(c.created_at).toLocaleDateString(LOCALES[currentLang])}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Review widgets (étoiles + formulaire d'avis) ───────────────
+
+function StarRatingInput({
+  value, onChange,
+}: {
+  value: number;
+  onChange: (n: number) => void;
+}) {
+  const [hover, setHover] = useState(0);
+  const shown = hover || value;
+  return (
+    <div style={{ display: "flex", gap: 4 }} onMouseLeave={() => setHover(0)}>
+      {[1, 2, 3, 4, 5].map((n) => (
+        <button
+          key={n}
+          type="button"
+          aria-label={`${n}/5`}
+          onClick={() => onChange(n)}
+          onMouseEnter={() => setHover(n)}
+          style={{ padding: 2, lineHeight: 0 }}
+        >
+          <Star
+            size={30}
+            color={n <= shown ? "#F59E0B" : "var(--neutral-300)"}
+            fill={n <= shown ? "#F59E0B" : "none"}
+          />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function BookingReview({
+  booking, onSubmitted, showToast,
+}: {
+  booking: Booking;
+  onSubmitted: () => void;
+  showToast: (msg: string) => void;
+}) {
+  const [rating, setRating] = useState(0);
+  const [comment, setComment] = useState("");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const todayStr = new Date().toISOString().split("T")[0];
+  const ended = booking.check_out <= todayStr;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    if (rating < 1) {
+      setError(t("Please select a rating"));
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await api("/api/reviews", {
+        method: "POST",
+        body: JSON.stringify({ booking_id: booking.id, rating, comment: comment.trim() || null }),
+      }, getToken() || undefined);
+      showToast(t("Thank you for your review!"));
+      onSubmitted();
+    } catch (err: any) {
+      setError(t(err.message || "Something went wrong"));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (booking.status !== "paid") return null;
+
+  // Avis déjà publié : un seul avis par réservation
+  if (booking.has_review && booking.review) {
+    return (
+      <div style={{
+        border: "1px solid var(--neutral-200)", borderRadius: "var(--radius-lg)",
+        padding: 24, marginTop: 16,
+      }}>
+        <h3 style={{ marginBottom: 12 }}>{t("Your review")}</h3>
+        <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
+          {[1, 2, 3, 4, 5].map((n) => (
+            <Star
+              key={n}
+              size={22}
+              color={n <= booking.review!.rating ? "#F59E0B" : "var(--neutral-300)"}
+              fill={n <= booking.review!.rating ? "#F59E0B" : "none"}
+            />
+          ))}
+        </div>
+        {booking.review.comment && (
+          <p style={{ color: "var(--neutral-700)", lineHeight: 1.6 }}>{booking.review.comment}</p>
+        )}
+      </div>
+    );
+  }
+
+// // TEST Séjour pas encore terminé : on peut quand meme laisser l'avis
+// if (!ended && booking.id !== 3) return null;
+
+  // Séjour pas encore terminé : pas de formulaire
+  if (!ended) return null;
+
+  return (
+    <div style={{
+      border: "1px solid var(--neutral-200)", borderRadius: "var(--radius-lg)",
+      padding: 24, marginTop: 16,
+    }}>
+      <h3 style={{ marginBottom: 4 }}>{t("Leave a review")}</h3>
+      <p className="color-neutral-500" style={{ marginBottom: 16 }}>{t("How was your stay?")}</p>
+      <form onSubmit={handleSubmit}>
+        <div className="form-group">
+          <label>{t("Your rating")}</label>
+          <StarRatingInput value={rating} onChange={setRating} />
+        </div>
+        <div className="form-group">
+          <label>{t("Your comment (optional)")}</label>
+          <textarea
+            className="form-input"
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            maxLength={2000}
+            placeholder={t("Share your experience...")}
+          />
+        </div>
+        {error && (
+          <div className="form-error mb-16">
+            <AlertCircle size={14} style={{ display: "inline", marginRight: 4 }} />
+            {error}
+          </div>
+        )}
+        <button type="submit" className="btn btn-primary btn-block" disabled={submitting}>
+          {submitting ? <Loader2 size={18} className="animate-spin" /> : <Star size={18} />}
+          {t("Submit review")}
+        </button>
+      </form>
     </div>
   );
 }
@@ -2578,6 +3869,7 @@ function BookingDetailPage({
 }) {
   const [booking, setBooking] = useState<Booking | null>(null);
   const [loading, setLoading] = useState(true);
+  const [reloadKey, setReloadKey] = useState(0);
 
   const queryStr = route.split("?")[1] || "";
   const queryParams = useMemo(() => new URLSearchParams(queryStr), [queryStr]);
@@ -2609,7 +3901,7 @@ function BookingDetailPage({
     };
     load();
     return () => { cancelled = true; if (timer) clearTimeout(timer); };
-  }, [bookingId, paymentStatus]);
+  }, [bookingId, paymentStatus, reloadKey]);
 
   if (loading) return <div className="loading-spinner"><div className="spinner" /></div>;
   if (!booking) {
@@ -2762,6 +4054,13 @@ function BookingDetailPage({
             {t("View listing")}
           </button>
         </div>
+
+        {/* Avis : formulaire (séjour terminé, un seul avis par réservation) ou avis publié */}
+        <BookingReview
+          booking={booking}
+          showToast={showToast}
+          onSubmitted={() => setReloadKey((k) => k + 1)}
+        />
       </div>
     </div>
   );
@@ -2782,6 +4081,7 @@ function HostDashboardPage({
   const [loading, setLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingListing, setEditingListing] = useState<Listing | null>(null);
+  const [calendarListing, setCalendarListing] = useState<Listing | null>(null);
   const [stripeStatus, setStripeStatus] = useState<StripeStatus | null>(null);
   const [stripeBusy, setStripeBusy] = useState(false);
   const [dashboardBusy, setDashboardBusy] = useState(false);
@@ -3006,6 +4306,12 @@ function HostDashboardPage({
                 </button>
                 <button
                   className="btn btn-outline btn-sm"
+                  onClick={() => setCalendarListing(l)}
+                >
+                  <Calendar size={16} /> {t("Calendar")}
+                </button>
+                <button
+                  className="btn btn-outline btn-sm"
                   onClick={() => setEditingListing(l)}
                 >
                   <Edit2 size={16} /> {t("Edit")}
@@ -3112,6 +4418,236 @@ function HostDashboardPage({
           showToast={showToast}
         />
       )}
+
+      {calendarListing && (
+        <HostCalendarModal
+          listing={calendarListing}
+          onClose={() => setCalendarListing(null)}
+          showToast={showToast}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Host Calendar Modal (bloquer / débloquer des dates) ────────
+
+function HostCalendarModal({
+  listing, onClose, showToast,
+}: {
+  listing: Listing;
+  onClose: () => void;
+  showToast: (msg: string) => void;
+}) {
+  const now = new Date();
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth());
+  const [blocked, setBlocked] = useState<Set<string>>(new Set());
+  const [booked, setBooked] = useState<Set<string>>(new Set());
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const fmt = (y: number, m: number, d: number) => `${y}-${pad(m + 1)}-${pad(d)}`;
+  const todayStr = fmt(now.getFullYear(), now.getMonth(), now.getDate());
+
+  useEffect(() => {
+    api<{
+      blocked: string[];
+      bookings: { check_in: string; check_out: string; status: string }[];
+    }>(`/api/host/listings/${listing.id}/calendar`, {}, getToken() || undefined)
+      .then((d) => {
+        setBlocked(new Set(d.blocked));
+        // Chaque nuit réservée [check_in, check_out[ est marquée "réservée"
+        const b = new Set<string>();
+        d.bookings.forEach((bk) => {
+          const start = new Date(`${bk.check_in}T00:00:00`);
+          const end = new Date(`${bk.check_out}T00:00:00`);
+          for (let c = new Date(start); c < end; c.setDate(c.getDate() + 1)) {
+            b.add(fmt(c.getFullYear(), c.getMonth(), c.getDate()));
+          }
+        });
+        setBooked(b);
+      })
+      .catch((err: any) => setError(t(err.message || "Something went wrong")))
+      .finally(() => setLoading(false));
+  }, [listing.id]);
+
+  const goMonth = (delta: number) => {
+    const d = new Date(year, month + delta, 1);
+    setYear(d.getFullYear());
+    setMonth(d.getMonth());
+  };
+
+  const locale = LOCALES[currentLang];
+  const monthTitle = new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" })
+    .format(new Date(year, month, 1));
+  // 1er janvier 2024 = lundi : semaine affichée du lundi au dimanche
+  const weekdays = Array.from({ length: 7 }, (_, i) =>
+    new Intl.DateTimeFormat(locale, { weekday: "short" }).format(new Date(2024, 0, 1 + i))
+  );
+
+  const firstOffset = (new Date(year, month, 1).getDay() + 6) % 7;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells: (number | null)[] = [
+    ...Array.from({ length: firstOffset }, () => null),
+    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
+  ];
+
+  const toggleDate = (ds: string) => {
+    setSelected((prev) => {
+      const n = new Set(prev);
+      if (n.has(ds)) n.delete(ds); else n.add(ds);
+      return n;
+    });
+  };
+
+  const selectedList = Array.from(selected);
+  const toBlock = selectedList.filter((d) => !blocked.has(d));
+  const toUnblock = selectedList.filter((d) => blocked.has(d));
+
+  const submit = async (action: "block" | "unblock", dates: string[]) => {
+    if (dates.length === 0) return;
+    setBusy(true);
+    setError("");
+    try {
+      const d = await api<{ blocked: string[] }>(
+        `/api/host/listings/${listing.id}/calendar/${action}`,
+        { method: "POST", body: JSON.stringify({ dates }) },
+        getToken() || undefined
+      );
+      setBlocked(new Set(d.blocked));
+      setSelected(new Set());
+      showToast(t(action === "block" ? "Dates blocked" : "Dates unblocked"));
+    } catch (err: any) {
+      setError(t(err.message || "Something went wrong"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const legendBox = (style: React.CSSProperties): React.CSSProperties => ({
+    display: "inline-block", width: 14, height: 14, borderRadius: 4,
+    border: "1px solid var(--neutral-300)", ...style,
+  });
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal modal-lg" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>{t("Availability calendar")} — {listing.title}</h3>
+          <button className="modal-close" onClick={onClose} aria-label={t("Close")}>
+            <X size={20} />
+          </button>
+        </div>
+        <div className="modal-body">
+          <p className="color-neutral-500 text-sm mb-16">
+            {t("Select the dates to block or unblock, then confirm.")}
+          </p>
+
+          {loading ? (
+            <div className="loading-spinner"><div className="spinner" /></div>
+          ) : (
+            <>
+              <div className="calendar">
+                <div className="calendar-header">
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => goMonth(-1)}
+                    aria-label={t("Previous month")}
+                  >
+                    <ChevronLeft size={18} />
+                  </button>
+                  <strong style={{ textTransform: "capitalize" }}>{monthTitle}</strong>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => goMonth(1)}
+                    aria-label={t("Next month")}
+                  >
+                    <ChevronRight size={18} />
+                  </button>
+                </div>
+                <div className="calendar-grid">
+                  {weekdays.map((w, i) => (
+                    <div key={i} className="calendar-day-name">{w}</div>
+                  ))}
+                  {cells.map((d, i) => {
+                    if (d === null) return <div key={`e${i}`} />;
+                    const ds = fmt(year, month, d);
+                    const isPast = ds < todayStr;
+                    const isBooked = booked.has(ds);
+                    const isBlocked = blocked.has(ds);
+                    const isSel = selected.has(ds);
+                    return (
+                      <button
+                        key={ds}
+                        type="button"
+                        disabled={isPast || isBooked}
+                        className={`calendar-day ${isSel ? "selected" : ""} ${isBooked ? "booked" : ""}`}
+                        style={isBlocked && !isSel && !isBooked
+                          ? { background: "var(--neutral-800)", color: "#fff" }
+                          : undefined}
+                        onClick={() => toggleDate(ds)}
+                        title={isBooked ? t("Booked") : isBlocked ? t("Blocked") : t("Available")}
+                      >
+                        {d}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Légende */}
+              <div style={{ display: "flex", gap: 16, flexWrap: "wrap", margin: "12px 0 16px", fontSize: 13 }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <span style={legendBox({ background: "#fff" })} /> {t("Available")}
+                </span>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <span style={legendBox({ background: "var(--neutral-800)" })} /> {t("Blocked")}
+                </span>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <span style={legendBox({ background: "var(--neutral-100)" })} /> {t("Booked")}
+                </span>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <span style={legendBox({ background: "var(--primary)" })} /> ✓
+                </span>
+              </div>
+
+              {error && (
+                <div className="form-error mb-16">
+                  <AlertCircle size={14} style={{ display: "inline", marginRight: 4 }} />
+                  {error}
+                </div>
+              )}
+
+              <div className="flex gap-12 flex-wrap">
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={busy || toBlock.length === 0}
+                  onClick={() => submit("block", toBlock)}
+                >
+                  {busy ? <Loader2 size={18} className="animate-spin" /> : <Lock size={18} />}
+                  {t("Block selected dates ({n})", { n: toBlock.length })}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  disabled={busy || toUnblock.length === 0}
+                  onClick={() => submit("unblock", toUnblock)}
+                >
+                  <Check size={18} />
+                  {t("Unblock selected dates ({n})", { n: toUnblock.length })}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -3141,6 +4677,15 @@ function ListingFormModal({
   const [bathrooms, setBathrooms] = useState(String(listing?.bathrooms || "0"));
   const [propertyType, setPropertyType] = useState(listing?.property_type || "apartment");
   const [status, setStatus] = useState(listing?.status || "draft");
+  const [checkInTime, setCheckInTime] = useState(listing?.check_in_time || "15:00");
+  const [checkOutTime, setCheckOutTime] = useState(listing?.check_out_time || "11:00");
+  const [petsAllowed, setPetsAllowed] = useState(!!listing?.pets_allowed);
+  const [smokingAllowed, setSmokingAllowed] = useState(!!listing?.smoking_allowed);
+  const [partiesAllowed, setPartiesAllowed] = useState(!!listing?.parties_allowed);
+  const [eventsAllowed, setEventsAllowed] = useState(!!listing?.events_allowed);
+  const [childrenAllowed, setChildrenAllowed] = useState(listing ? listing.children_allowed !== false : true);
+  const [arrivalInstructions, setArrivalInstructions] = useState(listing?.arrival_instructions || "");
+  const [additionalRules, setAdditionalRules] = useState(listing?.additional_rules || "");
   const [imageUrls, setImageUrls] = useState<string[]>(
     listing?.images?.map((i) => i.image_url) || []
   );
@@ -3186,6 +4731,15 @@ function ListingFormModal({
         property_type: propertyType,
         amenity_ids: Array.from(selectedAmenities),
         image_urls: imageUrls,
+        check_in_time: checkInTime,
+        check_out_time: checkOutTime,
+        pets_allowed: petsAllowed,
+        smoking_allowed: smokingAllowed,
+        parties_allowed: partiesAllowed,
+        events_allowed: eventsAllowed,
+        children_allowed: childrenAllowed,
+        arrival_instructions: arrivalInstructions.trim() || null,
+        additional_rules: additionalRules.trim() || null,
       };
 
       if (listing) {
@@ -3304,6 +4858,55 @@ function ListingFormModal({
               </div>
             )}
 
+            {/* House rules */}
+            <div className="form-group">
+              <label style={{ fontWeight: 700 }}>{t("House rules")}</label>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>{t("Check-in time")}</label>
+                  <input className="form-input" type="time" value={checkInTime}
+                    onChange={(e) => setCheckInTime(e.target.value)} required />
+                </div>
+                <div className="form-group">
+                  <label>{t("Check-out time")}</label>
+                  <input className="form-input" type="time" value={checkOutTime}
+                    onChange={(e) => setCheckOutTime(e.target.value)} required />
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+                <label className="filter-checkbox">
+                  <input type="checkbox" checked={petsAllowed} onChange={(e) => setPetsAllowed(e.target.checked)} />
+                  {t("Pets allowed")}
+                </label>
+                <label className="filter-checkbox">
+                  <input type="checkbox" checked={smokingAllowed} onChange={(e) => setSmokingAllowed(e.target.checked)} />
+                  {t("Smoking allowed")}
+                </label>
+                <label className="filter-checkbox">
+                  <input type="checkbox" checked={partiesAllowed} onChange={(e) => setPartiesAllowed(e.target.checked)} />
+                  {t("Parties allowed")}
+                </label>
+                <label className="filter-checkbox">
+                  <input type="checkbox" checked={eventsAllowed} onChange={(e) => setEventsAllowed(e.target.checked)} />
+                  {t("Events allowed")}
+                </label>
+                <label className="filter-checkbox">
+                  <input type="checkbox" checked={childrenAllowed} onChange={(e) => setChildrenAllowed(e.target.checked)} />
+                  {t("Children welcome")}
+                </label>
+              </div>
+              <div className="form-group">
+                <label>{t("Arrival instructions")}</label>
+                <textarea className="form-input" value={arrivalInstructions}
+                  onChange={(e) => setArrivalInstructions(e.target.value)} maxLength={5000} />
+              </div>
+              <div className="form-group">
+                <label>{t("Additional rules")}</label>
+                <textarea className="form-input" value={additionalRules}
+                  onChange={(e) => setAdditionalRules(e.target.value)} maxLength={5000} />
+              </div>
+            </div>
+
             {/* Images */}
             <div className="form-group">
               <label>{t("Images (paste URLs)")}</label>
@@ -3382,7 +4985,7 @@ function AdminPage({
   onNavigate: (to: string) => void;
   showToast: (msg: string) => void;
 }) {
-  const [tab, setTab] = useState<"users" | "listings" | "bookings">("users");
+  const [tab, setTab] = useState<"users" | "listings" | "bookings" | "cancellations">("users");
   const [users, setUsers] = useState<User[]>([]);
   const [listings, setListings] = useState<Listing[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -3423,6 +5026,7 @@ function AdminPage({
         <button className={`tab ${tab === "users" ? "active" : ""}`} onClick={() => setTab("users")}>{t("Users ({n})", { n: users.length })}</button>
         <button className={`tab ${tab === "listings" ? "active" : ""}`} onClick={() => setTab("listings")}>{t("Listings ({n})", { n: listings.length })}</button>
         <button className={`tab ${tab === "bookings" ? "active" : ""}`} onClick={() => setTab("bookings")}>{t("Bookings ({n})", { n: bookings.length })}</button>
+        <button className={`tab ${tab === "cancellations" ? "active" : ""}`} onClick={() => setTab("cancellations")}>{t("Cancellations")}</button>
       </div>
 
       {tab === "users" && (
@@ -3522,6 +5126,136 @@ function AdminPage({
           </table>
         </div>
       )}
+
+      {tab === "cancellations" && <AdminCancellationsTab showToast={showToast} />}
+    </div>
+  );
+}
+
+// ─── Admin: demandes d'annulation / remboursements ──────────────
+
+function AdminCancellationsTab({ showToast }: { showToast: (msg: string) => void }) {
+  const [items, setItems] = useState<CancellationRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState("");
+  const [busyId, setBusyId] = useState<number | null>(null);
+
+  const load = useCallback(() => {
+    api<{ requests: CancellationRequest[] }>(
+      `/api/admin/cancellations${filter ? `?status=${filter}` : ""}`, {}, getToken() || undefined
+    )
+      .then((d) => setItems(d.requests))
+      .catch(() => setItems([]))
+      .finally(() => setLoading(false));
+  }, [filter]);
+
+  useEffect(() => { setLoading(true); load(); }, [load]);
+
+  const act = async (id: number, action: "approve" | "reject" | "sync") => {
+    let note: string | null = "";
+    if (action !== "sync") {
+      note = window.prompt(t("Note for the customer (optional)"));
+      if (note === null) return;
+    }
+    setBusyId(id);
+    try {
+      await api(`/api/admin/cancellations/${id}/${action}`, {
+        method: "POST",
+        body: JSON.stringify({ note }),
+      }, getToken() || undefined);
+      showToast(t("Request processed"));
+    } catch (err: any) {
+      showToast(t(err.message || "Something went wrong"));
+    } finally {
+      setBusyId(null);
+      load();
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex-between mb-16">
+        <h2 className="text-xl">{t("Cancellation requests ({n})", { n: items.length })}</h2>
+        <select
+          className="filter-input"
+          style={{ width: "auto" }}
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+        >
+          <option value="">{t("All statuses")}</option>
+          {(["pending", "approved", "rejected", "processing", "refunded", "failed"] as const).map((s) => (
+            <option key={s} value={s}>{cap(t(s))}</option>
+          ))}
+        </select>
+      </div>
+
+      {loading ? (
+        <div className="loading-spinner"><div className="spinner" /></div>
+      ) : items.length === 0 ? (
+        <div className="empty-state"><h3>{t("No cancellation requests")}</h3></div>
+      ) : (
+        <div style={{ overflowX: "auto" }}>
+          <table className="admin-table">
+            <thead>
+              <tr>
+                <th>ID</th><th>{t("Booking")}</th><th>{t("Guest")}</th><th>{t("Dates")}</th>
+                <th>{t("Total")}</th><th>{t("Refund rate")}</th><th>{t("Refund")}</th>
+                <th>{t("Status")}</th><th>{t("Actions")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((c) => {
+                const amount = c.refunded_amount ?? c.approved_amount ?? c.refundable_amount;
+                return (
+                  <tr key={c.id}>
+                    <td>{c.id}</td>
+                    <td>
+                      #{c.booking_id}<br />
+                      <span className="text-sm color-neutral-500">{c.listing?.title}</span>
+                    </td>
+                    <td>
+                      {c.guest?.first_name} {c.guest?.last_name}<br />
+                      <span className="text-sm color-neutral-500">{c.guest?.email}</span>
+                    </td>
+                    <td>{c.booking ? `${c.booking.check_in} → ${c.booking.check_out}` : "—"}</td>
+                    <td>${c.total_paid.toFixed(2)}</td>
+                    <td>{c.refund_percent}%</td>
+                    <td>${amount.toFixed(2)}</td>
+                    <td>
+                      <span className={`status-badge status-${cancellationBadgeClass(c.status)}`}>{t(c.status)}</span>
+                      {c.reason && <div className="text-sm color-neutral-500">{c.reason}</div>}
+                      {c.failure_reason && <div className="text-sm" style={{ color: "var(--error)" }}>{c.failure_reason}</div>}
+                      {c.admin_note && <div className="text-sm color-neutral-500">{t("Note: {note}", { note: c.admin_note })}</div>}
+                    </td>
+                    <td>
+                      <div className="flex gap-8 flex-col">
+                        {(c.status === "pending" || c.status === "failed") && (
+                          <>
+                            <button className="btn btn-primary btn-sm" disabled={busyId === c.id}
+                              onClick={() => act(c.id, "approve")}>
+                              {busyId === c.id ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} {t("Approve")}
+                            </button>
+                            <button className="btn btn-outline btn-sm" disabled={busyId === c.id}
+                              style={{ color: "var(--error)" }} onClick={() => act(c.id, "reject")}>
+                              <XCircle size={14} /> {t("Reject")}
+                            </button>
+                          </>
+                        )}
+                        {c.status === "processing" && (
+                          <button className="btn btn-outline btn-sm" disabled={busyId === c.id}
+                            onClick={() => act(c.id, "sync")}>
+                            <Loader2 size={14} /> {t("Sync with Stripe")}
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
@@ -3529,11 +5263,12 @@ function AdminPage({
 // ─── Profile Page ───────────────────────────────────────────────
 
 function ProfilePage({
-  user, onNavigate, showToast,
+  user, onNavigate, showToast, onUserUpdate,
 }: {
   user: User | null;
   onNavigate: (to: string) => void;
   showToast: (msg: string) => void;
+  onUserUpdate: (u: User) => void;
 }) {
   if (!user) {
     return (
@@ -3601,6 +5336,10 @@ function ProfilePage({
           )}
         </div>
 
+        <ProfileEditForm user={user} onUserUpdate={onUserUpdate} showToast={showToast} />
+        <PasswordChangeForm showToast={showToast} />
+        <AuthenticatorSection user={user} onUserUpdate={onUserUpdate} showToast={showToast} />
+
         <div className="flex gap-12 mt-24">
           <button className="btn btn-secondary btn-block" onClick={() => onNavigate("/bookings")}>
             <Calendar size={18} /> {t("My bookings")}
@@ -3610,6 +5349,390 @@ function ProfilePage({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Modification du prénom / nom
+function ProfileEditForm({
+  user, onUserUpdate, showToast,
+}: {
+  user: User;
+  onUserUpdate: (u: User) => void;
+  showToast: (msg: string) => void;
+}) {
+  const [firstName, setFirstName] = useState(user.first_name);
+  const [lastName, setLastName] = useState(user.last_name);
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setSubmitting(true);
+    try {
+      const d = await api<{ user: User }>("/api/auth/profile", {
+        method: "PUT",
+        body: JSON.stringify({ first_name: firstName, last_name: lastName }),
+      }, getToken() || undefined);
+      onUserUpdate(d.user);
+      showToast(t("Profile updated"));
+    } catch (err: any) {
+      setError(t(err.message || "Something went wrong"));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div style={{
+      border: "1px solid var(--neutral-200)", borderRadius: "var(--radius-lg)",
+      padding: 24, marginTop: 24,
+    }}>
+      <h3 style={{ marginBottom: 16 }}>{t("Edit profile")}</h3>
+      <form onSubmit={handleSubmit}>
+        <div className="form-row">
+          <div className="form-group">
+            <label>{t("First name")}</label>
+            <input
+              className="form-input"
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
+              required
+              maxLength={80}
+              autoComplete="given-name"
+            />
+          </div>
+          <div className="form-group">
+            <label>{t("Last name")}</label>
+            <input
+              className="form-input"
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value)}
+              required
+              maxLength={80}
+              autoComplete="family-name"
+            />
+          </div>
+        </div>
+        {error && (
+          <div className="form-error mb-16">
+            <AlertCircle size={14} style={{ display: "inline", marginRight: 4 }} />
+            {error}
+          </div>
+        )}
+        <button type="submit" className="btn btn-primary btn-block" disabled={submitting}>
+          {submitting ? <Loader2 size={18} className="animate-spin" /> : null}
+          {t("Save changes")}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+// Changement du mot de passe (mot de passe actuel requis)
+function PasswordChangeForm({
+  showToast,
+}: {
+  showToast: (msg: string) => void;
+}) {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    if (newPassword.length < 6) {
+      setError(t("Password must be at least 6 characters"));
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError(t("Passwords do not match"));
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await api("/api/auth/password", {
+        method: "PUT",
+        body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+      }, getToken() || undefined);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      showToast(t("Password updated"));
+    } catch (err: any) {
+      setError(t(err.message || "Something went wrong"));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div style={{
+      border: "1px solid var(--neutral-200)", borderRadius: "var(--radius-lg)",
+      padding: 24, marginTop: 24,
+    }}>
+      <h3 style={{ marginBottom: 16 }}>{t("Change password")}</h3>
+      <form onSubmit={handleSubmit}>
+        <div className="form-group">
+          <label>{t("Current password")}</label>
+          <input
+            type="password"
+            className="form-input"
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            required
+            autoComplete="current-password"
+          />
+        </div>
+        <div className="form-group">
+          <label>{t("New password")}</label>
+          <input
+            type="password"
+            className="form-input"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            required
+            autoComplete="new-password"
+            placeholder={t("At least 6 characters")}
+          />
+        </div>
+        <div className="form-group">
+          <label>{t("Confirm new password")}</label>
+          <input
+            type="password"
+            className="form-input"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            required
+            autoComplete="new-password"
+          />
+        </div>
+        {error && (
+          <div className="form-error mb-16">
+            <AlertCircle size={14} style={{ display: "inline", marginRight: 4 }} />
+            {error}
+          </div>
+        )}
+        <button type="submit" className="btn btn-primary btn-block" disabled={submitting}>
+          {submitting ? <Loader2 size={18} className="animate-spin" /> : <Lock size={18} />}
+          {t("Change password")}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+// Authentificateur (QR code type Google Authenticator / Authy) pour récupérer le mot de passe
+function AuthenticatorSection({
+  user, onUserUpdate, showToast,
+}: {
+  user: User;
+  onUserUpdate: (u: User) => void;
+  showToast: (msg: string) => void;
+}) {
+  const [setup, setSetup] = useState<{ secret: string; qr_code: string | null } | null>(null);
+  const [code, setCode] = useState("");
+  const [password, setPassword] = useState("");
+  const [showDisable, setShowDisable] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const startSetup = async () => {
+    setError("");
+    setBusy(true);
+    try {
+      const d = await api<{ secret: string; qr_code: string | null }>("/api/auth/totp/setup", {
+        method: "POST",
+      }, getToken() || undefined);
+      setSetup({ secret: d.secret, qr_code: d.qr_code });
+      setCode("");
+    } catch (err: any) {
+      setError(t(err.message || "Something went wrong"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirmEnable = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setBusy(true);
+    try {
+      const d = await api<{ user: User }>("/api/auth/totp/enable", {
+        method: "POST",
+        body: JSON.stringify({ code }),
+      }, getToken() || undefined);
+      onUserUpdate(d.user);
+      setSetup(null);
+      setCode("");
+      showToast(t("Authenticator enabled"));
+    } catch (err: any) {
+      setError(t(err.message || "Something went wrong"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const disable = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setBusy(true);
+    try {
+      const d = await api<{ user: User }>("/api/auth/totp/disable", {
+        method: "POST",
+        body: JSON.stringify({ password }),
+      }, getToken() || undefined);
+      onUserUpdate(d.user);
+      setShowDisable(false);
+      setPassword("");
+      showToast(t("Authenticator disabled"));
+    } catch (err: any) {
+      setError(t(err.message || "Something went wrong"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const errorBlock = error ? (
+    <div className="form-error mb-16">
+      <AlertCircle size={14} style={{ display: "inline", marginRight: 4 }} />
+      {error}
+    </div>
+  ) : null;
+
+  return (
+    <div style={{
+      border: "1px solid var(--neutral-200)", borderRadius: "var(--radius-lg)",
+      padding: 24, marginTop: 24,
+    }}>
+      <h3 style={{ marginBottom: 4 }}>{t("Security")}</h3>
+      <p className="color-neutral-500" style={{ fontWeight: 600, marginBottom: 8 }}>
+        {t("Authenticator app (password recovery)")}
+      </p>
+
+      {user.totp_enabled ? (
+        <>
+          <div style={{
+            padding: 12, borderRadius: "var(--radius-md)", background: "#D1FAE5",
+            color: "#065F46", display: "flex", alignItems: "center", gap: 10, marginBottom: 16,
+          }}>
+            <CheckCircle2 size={20} />
+            <span>{t("Authenticator is active. You can use it to reset your password.")}</span>
+          </div>
+          {!showDisable ? (
+            <button
+              type="button"
+              className="btn btn-outline btn-block"
+              onClick={() => { setShowDisable(true); setError(""); }}
+            >
+              {t("Disable authenticator")}
+            </button>
+          ) : (
+            <form onSubmit={disable}>
+              <div className="form-group">
+                <label>{t("Current password")}</label>
+                <input
+                  type="password"
+                  className="form-input"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  autoComplete="current-password"
+                />
+              </div>
+              {errorBlock}
+              <div className="flex gap-8">
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-block"
+                  onClick={() => { setShowDisable(false); setPassword(""); setError(""); }}
+                >
+                  {t("Cancel")}
+                </button>
+                <button type="submit" className="btn btn-primary btn-block" disabled={busy}>
+                  {busy ? <Loader2 size={18} className="animate-spin" /> : null}
+                  {t("Disable authenticator")}
+                </button>
+              </div>
+            </form>
+          )}
+        </>
+      ) : setup ? (
+        <form onSubmit={confirmEnable}>
+          <p style={{ color: "var(--neutral-600)", fontSize: 14, marginBottom: 16 }}>
+            {t("Scan this QR code with your authenticator app, then enter the 6-digit code to confirm.")}
+          </p>
+          {setup.qr_code && (
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}>
+              <img
+                src={setup.qr_code}
+                alt="QR code"
+                style={{
+                  width: 200, height: 200, background: "#fff", padding: 8,
+                  border: "1px solid var(--neutral-200)", borderRadius: "var(--radius-md)",
+                }}
+              />
+            </div>
+          )}
+          <p className="text-sm color-neutral-500" style={{ marginBottom: 4 }}>
+            {t("Can't scan? Enter this key manually:")}
+          </p>
+          <code style={{
+            display: "block", padding: "8px 12px", marginBottom: 16, borderRadius: "var(--radius-sm)",
+            background: "var(--neutral-100)", wordBreak: "break-all", fontSize: 14, letterSpacing: 1,
+          }}>
+            {setup.secret}
+          </code>
+          <div className="form-group">
+            <label>{t("6-digit code")}</label>
+            <input
+              className="form-input"
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              required
+              inputMode="numeric"
+              pattern="[0-9]{6}"
+              maxLength={6}
+              autoComplete="one-time-code"
+              placeholder="123456"
+            />
+          </div>
+          {errorBlock}
+          <div className="flex gap-8">
+            <button
+              type="button"
+              className="btn btn-secondary btn-block"
+              onClick={() => { setSetup(null); setCode(""); setError(""); }}
+            >
+              {t("Cancel")}
+            </button>
+            <button type="submit" className="btn btn-primary btn-block" disabled={busy || code.length !== 6}>
+              {busy ? <Loader2 size={18} className="animate-spin" /> : <Shield size={18} />}
+              {t("Verify and enable")}
+            </button>
+          </div>
+        </form>
+      ) : (
+        <>
+          <p style={{ color: "var(--neutral-600)", fontSize: 14, marginBottom: 16 }}>
+            {t("Link an authenticator app such as Google Authenticator or Authy. It will let you reset your password if you forget it.")}
+          </p>
+          {errorBlock}
+          <button
+            type="button"
+            className="btn btn-primary btn-block"
+            onClick={startSetup}
+            disabled={busy}
+          >
+            {busy ? <Loader2 size={18} className="animate-spin" /> : <Shield size={18} />}
+            {t("Enable authenticator")}
+          </button>
+        </>
+      )}
     </div>
   );
 }
