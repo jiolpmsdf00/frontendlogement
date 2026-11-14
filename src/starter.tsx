@@ -1823,7 +1823,7 @@ function Footer({ onNavigate }: { onNavigate: (to: string) => void }) {
 function InfoCard({
   icon: Icon, title, text,
 }: {
-  icon: React.ComponentType<{ size?: number }>;
+  icon: React.ComponentType<{ size?: number | string }>;
   title: string;
   text: string;
 }) {
